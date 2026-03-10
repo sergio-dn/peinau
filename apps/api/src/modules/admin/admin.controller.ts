@@ -215,8 +215,8 @@ export async function debugSiiQuery(req: Request, res: Response) {
     const cookieStr = `TOKEN=${session.token}; CSESSIONID=${session.token}`;
     const client = auth.getClient();
 
-    // Raw query helper
-    const rawQuery = async (periodo: string, estado: string) => {
+    // Raw query helper — now with codTipoDoc as number
+    const rawQuery = async (periodo: string, estado: string, codTipoDoc: number) => {
       const body = {
         metaData: {
           conversationId: session.token,
@@ -229,7 +229,7 @@ export async function debugSiiQuery(req: Request, res: Response) {
           dvEmisor: dv,
           ptributario: periodo,
           estadoContab: estado,
-          codTipoDoc: '0',
+          codTipoDoc,
           operacion: 'COMPRA',
           accionRecaptcha: 'RCV_DDETC',
           tokenRecaptcha: 'c3',
@@ -247,10 +247,12 @@ export async function debugSiiQuery(req: Request, res: Response) {
           validateStatus: () => true,
         },
       );
-      return { status: resp.status, data: resp.data };
+      const dataCount = Array.isArray(resp.data?.data) ? resp.data.data.length : 0;
+      const error = resp.data?.metaData?.errors?.[0]?.descripcion || null;
+      return { status: resp.status, count: dataCount, error, sample: resp.data?.data?.slice?.(0, 2) || null };
     };
 
-    // Also try getResumen to see if there's data at all
+    // getResumen to see totals by DTE type
     const rawResumen = async (periodo: string) => {
       const body = {
         metaData: {
@@ -280,32 +282,50 @@ export async function debugSiiQuery(req: Request, res: Response) {
           validateStatus: () => true,
         },
       );
-      return { status: resp.status, data: resp.data };
+      return {
+        status: resp.status,
+        totDocRes: resp.data?.totDocRes ?? null,
+        data: resp.data?.data || [],
+        cabecera: resp.data?.dataCabecera || null,
+      };
     };
 
-    // Run queries
-    const [curRegistro, curPendiente, prevRegistro, curResumen, prevResumen] = await Promise.all([
-      rawQuery(periodo, 'REGISTRO'),
-      rawQuery(periodo, 'PENDIENTE'),
-      rawQuery(prevPeriodo, 'REGISTRO'),
-      rawResumen(periodo),
-      rawResumen(prevPeriodo),
-    ]);
+    // Build periods: current month + 5 months back
+    const periods: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      periods.push(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+
+    // Get resumen for all periods
+    const resumenResults: Record<string, any> = {};
+    for (const p of periods) {
+      resumenResults[p] = await rawResumen(p);
+    }
+
+    // For periods with data (totDocRes > 0), try getDetalleCompra with tipo 33
+    const detalleResults: Record<string, any> = {};
+    for (const p of periods) {
+      if (resumenResults[p].totDocRes > 0 || resumenResults[p].data?.length > 0) {
+        detalleResults[p] = await rawQuery(p, 'REGISTRO', 33);
+      }
+    }
+
+    // Also try tipo 33 REGISTRO on most recent 2 periods regardless
+    for (const p of periods.slice(0, 2)) {
+      if (!detalleResults[p]) {
+        detalleResults[p] = await rawQuery(p, 'REGISTRO', 33);
+      }
+    }
 
     res.json({
       companyRut: company.rut,
       parsedRut: `${rutBody}-${dv}`,
       siiUser: company.siiUsername,
       sessionCookies: session.cookies?.length || 0,
-      currentPeriod: periodo,
-      previousPeriod: prevPeriodo,
-      raw: {
-        currentRegistro: curRegistro,
-        currentPendiente: curPendiente,
-        previousRegistro: prevRegistro,
-        currentResumen: curResumen,
-        previousResumen: prevResumen,
-      },
+      periods,
+      resumen: resumenResults,
+      detalle: detalleResults,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message, stack: err.stack?.split('\n').slice(0, 5) });

@@ -321,7 +321,8 @@ function SettingsTab() {
     },
     onSuccess: (data) => {
       setDebugResult(data);
-      toast.success(`Debug: ${data.currentMonth?.count || 0} facturas mes actual, ${data.previousMonth?.count || 0} mes anterior`);
+      const totalDocs = Object.values(data.resumen || {}).reduce((sum: number, r: any) => sum + (r?.totDocRes || 0), 0);
+      toast.success(`Debug completado: ${totalDocs} documentos encontrados en ${data.periods?.length || 0} periodos`);
     },
     onError: (err: any) => {
       setDebugResult(err.response?.data || { error: err.message });

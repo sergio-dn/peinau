@@ -17,6 +17,9 @@ const RCV_BASE_URL = 'https://www4.sii.cl/consdcvinternetui/services/data/facade
 export class RpetcClient {
   constructor(private auth: SiiAuth) {}
 
+  // Common DTE types for purchases
+  private static readonly DTE_TYPES = [33, 34, 46, 56, 61];
+
   /**
    * Query the Registro de Compras for received DTEs in a period
    */
@@ -36,22 +39,30 @@ export class RpetcClient {
     // Build cookie string with both TOKEN and CSESSIONID
     const fullCookieStr = `TOKEN=${session.token}; CSESSIONID=${session.token}`;
 
-    // Try all possible estadoContab values to find invoices in any state
     const estados = ['REGISTRO', 'PENDIENTE', 'NO_INCLUIR', 'RECLAMADO'];
     const allEntries: RpetcEntry[] = [];
+    const seen = new Set<string>();
 
-    for (const estado of estados) {
-      try {
-        const entries = await this.queryRcvWithEstado(
-          client, session.token, fullCookieStr,
-          rutBody, dv, periodo, estado
-        );
-        if (entries.length > 0) {
-          console.log(`[RPETC] Found ${entries.length} entries with estado=${estado} for period ${periodo}`);
-          allEntries.push(...entries);
+    for (const tipoDte of RpetcClient.DTE_TYPES) {
+      for (const estado of estados) {
+        try {
+          const entries = await this.queryRcvWithEstado(
+            client, session.token, fullCookieStr,
+            rutBody, dv, periodo, estado, tipoDte
+          );
+          for (const entry of entries) {
+            const key = `${entry.tipoDte}-${entry.folio}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              allEntries.push(entry);
+            }
+          }
+          if (entries.length > 0) {
+            console.log(`[RPETC] Found ${entries.length} entries tipo=${tipoDte} estado=${estado} period=${periodo}`);
+          }
+        } catch (err) {
+          console.warn(`[RPETC] Error tipo=${tipoDte} estado=${estado}: ${(err as Error).message}`);
         }
-      } catch (err) {
-        console.warn(`[RPETC] Error querying estado=${estado}: ${(err as Error).message}`);
       }
     }
 
@@ -66,6 +77,7 @@ export class RpetcClient {
     dv: string,
     periodo: string,
     estadoContab: string,
+    codTipoDoc: number = 33,
   ): Promise<RpetcEntry[]> {
     try {
       const requestBody = {
@@ -80,14 +92,14 @@ export class RpetcClient {
           dvEmisor: dv,
           ptributario: periodo,
           estadoContab,
-          codTipoDoc: '0',
+          codTipoDoc,
           operacion: 'COMPRA',
           accionRecaptcha: 'RCV_DDETC',
           tokenRecaptcha: 'c3',
         },
       };
 
-      console.log(`[RPETC] Querying COMPRA RUT ${rutBody}-${dv}, period ${periodo}, estado=${estadoContab}`);
+      console.log(`[RPETC] Querying COMPRA RUT ${rutBody}-${dv}, period ${periodo}, tipo=${codTipoDoc}, estado=${estadoContab}`);
 
       const response = await client.post(
         `${RCV_BASE_URL}/getDetalleCompra`,
@@ -103,17 +115,19 @@ export class RpetcClient {
       );
 
       const data = response.data;
-      console.log(`[RPETC] Response [${estadoContab}] status: ${response.status}, data: ${JSON.stringify(data)?.substring(0, 1000)}`);
 
       if (response.status !== 200 || !data) return [];
 
-      // Try multiple possible response structures
-      const items = data.data || data.listaDetalleCompra || data.dataCompra || data;
-      if (!items || !Array.isArray(items)) {
-        console.log(`[RPETC] No array data. Type: ${typeof items}, keys: ${items && typeof items === 'object' ? Object.keys(items).join(', ') : 'N/A'}`);
+      // Check for API errors
+      if (data.metaData?.errors?.length > 0) {
+        console.log(`[RPETC] API error [tipo=${codTipoDoc} estado=${estadoContab}]: ${data.metaData.errors[0].descripcion}`);
         return [];
       }
 
+      const items = data.data;
+      if (!items || !Array.isArray(items)) return [];
+
+      console.log(`[RPETC] Got ${items.length} items for tipo=${codTipoDoc} estado=${estadoContab}`);
       return this.parseRcvResponse(items);
     } catch (error) {
       throw new RpetcError(`Failed to query RCV: ${(error as Error).message}`);
