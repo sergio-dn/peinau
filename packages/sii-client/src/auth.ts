@@ -155,6 +155,12 @@ export class SiiAuth {
 
       console.log(`[SII Auth] Success! TOKEN obtained, ${allCookies.length} total cookies`);
 
+      // Ensure CSESSIONID is included (needed for RCV API)
+      const hasCSESSIONID = allCookies.some(c => c.startsWith('CSESSIONID='));
+      if (!hasCSESSIONID) {
+        allCookies.push(`CSESSIONID=${tokenValue}`);
+      }
+
       this.session = {
         token: tokenValue,
         cookies: allCookies,

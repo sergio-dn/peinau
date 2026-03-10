@@ -50,8 +50,13 @@ export class RpetcClient {
           estadoContab: '',
           codTipoDoc: 0, // 0 = all document types
           operacion: 'COMPRA',
+          accionRecaptcha: 'RCV_DDETC',
+          tokenRecaptcha: 'c3',
         },
       };
+
+      // Build cookie string with both TOKEN and CSESSIONID
+      const fullCookieStr = `TOKEN=${session.token}; CSESSIONID=${session.token}`;
 
       console.log(`[RPETC] Querying RCV COMPRA for RUT ${rutBody}-${dv}, period ${periodo}`);
       console.log(`[RPETC] Request body:`, JSON.stringify(requestBody, null, 2));
@@ -62,8 +67,8 @@ export class RpetcClient {
         {
           headers: {
             'Content-Type': 'application/json;charset=utf-8',
-            'Accept': 'application/json',
-            'Cookie': cookieStr,
+            'Accept': 'application/json, text/plain, */*',
+            'Cookie': fullCookieStr,
           },
           validateStatus: () => true,
         }
