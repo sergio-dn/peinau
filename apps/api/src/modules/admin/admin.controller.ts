@@ -198,7 +198,9 @@ export async function debugSiiQuery(req: Request, res: Response) {
   try {
     const password = decrypt(company.siiPasswordEncrypted);
     const auth = new SiiAuth({ rut: company.siiUsername, password });
-    const session = await auth.authenticate();
+    await auth.authenticate();
+
+    const rpetc = new RpetcClient(auth);
 
     // Clean RUT for API
     const rutClean = company.rut.replace(/\./g, '');
@@ -208,124 +210,41 @@ export async function debugSiiQuery(req: Request, res: Response) {
 
     const now = new Date();
     const periodo = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    // Use the new RpetcClient with correct headers + session init
+    const resumen = await rpetc.rawResumen(rutBody, dv, periodo);
+    const detalle33 = await rpetc.rawDetalle(rutBody, dv, periodo, 'REGISTRO', 33);
+    const detalle34 = await rpetc.rawDetalle(rutBody, dv, periodo, 'REGISTRO', 34);
+
+    // Also try previous month
     const prevMonth = now.getMonth() === 0 ? 12 : now.getMonth();
     const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
     const prevPeriodo = `${prevYear}${String(prevMonth).padStart(2, '0')}`;
 
-    const cookieStr = `TOKEN=${session.token}; CSESSIONID=${session.token}`;
-    const client = auth.getClient();
-
-    // Raw query helper — now with codTipoDoc as number
-    const rawQuery = async (periodo: string, estado: string, codTipoDoc: number) => {
-      const body = {
-        metaData: {
-          conversationId: session.token,
-          namespace: 'cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/getDetalleCompra',
-          page: null,
-          transactionId: '0',
-        },
-        data: {
-          rutEmisor: rutBody,
-          dvEmisor: dv,
-          ptributario: periodo,
-          estadoContab: estado,
-          codTipoDoc,
-          operacion: 'COMPRA',
-          accionRecaptcha: 'RCV_DDETC',
-          tokenRecaptcha: 'c3',
-        },
-      };
-      const resp = await client.post(
-        'https://www4.sii.cl/consdcvinternetui/services/data/facadeService/getDetalleCompra',
-        body,
-        {
-          headers: {
-            'Content-Type': 'application/json;charset=utf-8',
-            'Accept': 'application/json, text/plain, */*',
-            'Cookie': cookieStr,
-          },
-          validateStatus: () => true,
-        },
-      );
-      const dataCount = Array.isArray(resp.data?.data) ? resp.data.data.length : 0;
-      const error = resp.data?.metaData?.errors?.[0]?.descripcion || null;
-      return { status: resp.status, count: dataCount, error, sample: resp.data?.data?.slice?.(0, 2) || null };
-    };
-
-    // getResumen to see totals by DTE type
-    const rawResumen = async (periodo: string) => {
-      const body = {
-        metaData: {
-          conversationId: session.token,
-          namespace: 'cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/getResumen',
-          page: null,
-          transactionId: '0',
-        },
-        data: {
-          rutEmisor: rutBody,
-          dvEmisor: dv,
-          ptributario: periodo,
-          operacion: 'COMPRA',
-          accionRecaptcha: 'RCV_DDETC',
-          tokenRecaptcha: 'c3',
-        },
-      };
-      const resp = await client.post(
-        'https://www4.sii.cl/consdcvinternetui/services/data/facadeService/getResumen',
-        body,
-        {
-          headers: {
-            'Content-Type': 'application/json;charset=utf-8',
-            'Accept': 'application/json, text/plain, */*',
-            'Cookie': cookieStr,
-          },
-          validateStatus: () => true,
-        },
-      );
-      return {
-        status: resp.status,
-        totDocRes: resp.data?.totDocRes ?? null,
-        data: resp.data?.data || [],
-        cabecera: resp.data?.dataCabecera || null,
-      };
-    };
-
-    // Build periods: current month + 5 months back
-    const periods: string[] = [];
-    for (let i = 0; i < 6; i++) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      periods.push(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`);
-    }
-
-    // Get resumen for all periods
-    const resumenResults: Record<string, any> = {};
-    for (const p of periods) {
-      resumenResults[p] = await rawResumen(p);
-    }
-
-    // For periods with data (totDocRes > 0), try getDetalleCompra with tipo 33
-    const detalleResults: Record<string, any> = {};
-    for (const p of periods) {
-      if (resumenResults[p].totDocRes > 0 || resumenResults[p].data?.length > 0) {
-        detalleResults[p] = await rawQuery(p, 'REGISTRO', 33);
-      }
-    }
-
-    // Also try tipo 33 REGISTRO on most recent 2 periods regardless
-    for (const p of periods.slice(0, 2)) {
-      if (!detalleResults[p]) {
-        detalleResults[p] = await rawQuery(p, 'REGISTRO', 33);
-      }
-    }
+    const prevResumen = await rpetc.rawResumen(rutBody, dv, prevPeriodo);
 
     res.json({
       companyRut: company.rut,
       parsedRut: `${rutBody}-${dv}`,
       siiUser: company.siiUsername,
-      sessionCookies: session.cookies?.length || 0,
-      periods,
-      resumen: resumenResults,
-      detalle: detalleResults,
+      currentPeriod: periodo,
+      previousPeriod: prevPeriodo,
+      resumen: {
+        [periodo]: {
+          totDocRes: resumen.data?.totDocRes ?? null,
+          data: resumen.data?.data || [],
+          status: resumen.status,
+        },
+        [prevPeriodo]: {
+          totDocRes: prevResumen.data?.totDocRes ?? null,
+          data: prevResumen.data?.data || [],
+          status: prevResumen.status,
+        },
+      },
+      detalle: {
+        [`${periodo}_tipo33`]: detalle33,
+        [`${periodo}_tipo34`]: detalle34,
+      },
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message, stack: err.stack?.split('\n').slice(0, 5) });
