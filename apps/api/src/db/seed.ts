@@ -84,7 +84,7 @@ async function seed() {
     workflowId: workflow.id,
     levelOrder: 1,
     name: 'Aprobacion Jefe',
-    minAmount: BigInt(0),
+    minAmount: 0,
     requiresAllApprovers: false,
   }).returning();
 

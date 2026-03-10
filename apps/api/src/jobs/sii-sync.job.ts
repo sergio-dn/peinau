@@ -1,20 +1,29 @@
 import { Queue, Worker } from 'bullmq';
-import { redis } from '../config/redis.js';
+import { getRedis } from '../config/redis.js';
 import { siiSyncService } from '../modules/sii-sync/sii-sync.service.js';
 import { db } from '../config/database.js';
 import { companies } from '../db/schema.js';
 
 const QUEUE_NAME = 'sii-sync';
 
-export const siiSyncQueue = new Queue(QUEUE_NAME, {
-  connection: redis as any,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 60000 },
-    removeOnComplete: 100,
-    removeOnFail: 50,
-  },
-});
+let _queue: Queue | null = null;
+
+function getQueue(): Queue {
+  if (!_queue) {
+    _queue = new Queue(QUEUE_NAME, {
+      connection: getRedis() as any,
+      defaultJobOptions: {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 60000 },
+        removeOnComplete: 100,
+        removeOnFail: 50,
+      },
+    });
+  }
+  return _queue;
+}
+
+export { getQueue as siiSyncQueue };
 
 export function startSiiSyncWorker() {
   const worker = new Worker(
@@ -27,7 +36,7 @@ export function startSiiSyncWorker() {
       return result;
     },
     {
-      connection: redis as any,
+      connection: getRedis() as any,
       concurrency: 1,
     }
   );
@@ -43,12 +52,12 @@ export function startSiiSyncWorker() {
  * Schedule recurring SII sync for all active companies
  */
 export async function scheduleSiiSync() {
-  // Sync every 4 hours
   const allCompanies = await db.select({ id: companies.id })
     .from(companies);
 
+  const queue = getQueue();
   for (const company of allCompanies) {
-    await siiSyncQueue.add(
+    await queue.add(
       'sync',
       { companyId: company.id },
       {
