@@ -6,6 +6,7 @@ import {
   updateSettings,
   updateSiiCredentials,
   testSiiConnection,
+  debugSiiQuery,
   listUsers,
   createUser,
   updateUser,
@@ -24,6 +25,7 @@ router.put('/settings', updateSettings);
 // SII credentials
 router.put('/sii-credentials', updateSiiCredentials);
 router.post('/sii-test', testSiiConnection);
+router.post('/sii-debug', debugSiiQuery);
 
 // Users
 router.get('/users', listUsers);

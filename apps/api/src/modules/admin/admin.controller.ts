@@ -3,7 +3,7 @@ import { db } from '../../config/database.js';
 import { companies, users, userRoles, siiSyncLogs } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
 import { encrypt, decrypt } from '../../lib/encryption.js';
-import { SiiAuth } from '@wildlama/sii-client';
+import { SiiAuth, RpetcClient } from '@wildlama/sii-client';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 
@@ -183,6 +183,46 @@ export async function createUser(req: Request, res: Response) {
     email: newUser.email,
     roles: parsed.data.roles,
   });
+}
+
+// POST /api/admin/sii-debug - Debug RCV query
+export async function debugSiiQuery(req: Request, res: Response) {
+  const company = await db.query.companies.findFirst({
+    where: eq(companies.id, req.user!.companyId),
+  });
+
+  if (!company?.siiUsername || !company?.siiPasswordEncrypted) {
+    return res.status(400).json({ error: 'No hay credenciales SII configuradas' });
+  }
+
+  try {
+    const password = decrypt(company.siiPasswordEncrypted);
+    const auth = new SiiAuth({ rut: company.siiUsername, password });
+    await auth.authenticate();
+
+    const rpetc = new RpetcClient(auth);
+
+    // Query current month
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+
+    const results = await rpetc.getMonthlyDtes(company.rut, year, month);
+
+    // Also try previous month
+    const prevMonth = month === 1 ? 12 : month - 1;
+    const prevYear = month === 1 ? year - 1 : year;
+    const prevResults = await rpetc.getMonthlyDtes(company.rut, prevYear, prevMonth);
+
+    res.json({
+      companyRut: company.rut,
+      siiUser: company.siiUsername,
+      currentMonth: { period: `${year}-${String(month).padStart(2, '0')}`, count: results.length, sample: results.slice(0, 3) },
+      previousMonth: { period: `${prevYear}-${String(prevMonth).padStart(2, '0')}`, count: prevResults.length, sample: prevResults.slice(0, 3) },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, stack: err.stack?.split('\n').slice(0, 5) });
+  }
 }
 
 // PUT /api/admin/users/:id
