@@ -53,7 +53,7 @@ export async function scheduleSiiSync() {
       { companyId: company.id },
       {
         repeat: {
-          pattern: '0 */4 * * *', // Every 4 hours
+          pattern: '0 7 * * *', // Daily at 7:00 AM
         },
         jobId: `sii-sync-${company.id}`,
       }

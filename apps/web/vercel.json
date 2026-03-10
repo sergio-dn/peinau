@@ -1,0 +1,10 @@
+{
+  "framework": "vite",
+  "buildCommand": "cd ../.. && pnpm install && pnpm --filter @wildlama/web build",
+  "outputDirectory": "dist",
+  "installCommand": "echo 'skip'",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "{{API_URL}}/api/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

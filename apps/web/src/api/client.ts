@@ -2,8 +2,9 @@ import axios from 'axios';
 import { useAuthStore } from '@/stores/auth-store';
 
 const apiClient = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.VITE_API_URL || '/api',
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 });
 
 // Add auth token to requests
