@@ -53,12 +53,30 @@ export class SiiAuth {
     });
 
     try {
+      // Collect all cookies across multiple requests/redirects
+      const allCookies: string[] = [];
+      let tokenValue: string | undefined;
+
+      const extractCookies = (headers: any) => {
+        const setCookies: string[] = headers['set-cookie'] || [];
+        for (const cookie of setCookies) {
+          const nameValue = cookie.split(';')[0];
+          allCookies.push(nameValue);
+          if (nameValue.startsWith('TOKEN=')) {
+            tokenValue = nameValue.substring('TOKEN='.length);
+          }
+        }
+        console.log(`[SII Auth] Cookies extracted: ${setCookies.map(c => c.split(';')[0].split('=')[0]).join(', ') || 'none'}`);
+      };
+
+      // Step 1: POST login form
       const response = await this.client.post(SII_AUTH_URL, formData.toString(), {
-        maxRedirects: 0, // Capture set-cookie from initial response
-        validateStatus: () => true, // Accept any status (302, 200, etc.)
+        maxRedirects: 0,
+        validateStatus: () => true,
       });
 
       const responseText = typeof response.data === 'string' ? response.data : '';
+      console.log(`[SII Auth] Step 1 - Status: ${response.status}, Body length: ${responseText.length}`);
 
       // Check for known SII error messages
       if (responseText.includes('Clave Incorrecta')) {
@@ -68,51 +86,74 @@ export class SiiAuth {
         throw new SiiAuthError('RUT SII no valido');
       }
 
-      // Extract all cookies from set-cookie headers
-      const setCookies: string[] = response.headers['set-cookie'] || [];
-      const allCookies: string[] = [];
-      let tokenValue: string | undefined;
+      extractCookies(response.headers);
 
-      for (const cookie of setCookies) {
-        const nameValue = cookie.split(';')[0]; // e.g. "TOKEN=abc123"
-        allCookies.push(nameValue);
-        if (nameValue.startsWith('TOKEN=')) {
-          tokenValue = nameValue.substring('TOKEN='.length);
+      // Step 2: Follow redirects manually (up to 5 hops) to collect all cookies
+      let currentUrl: string | undefined;
+      let currentStatus = response.status;
+      let currentBody = responseText;
+
+      // Check for HTTP redirect
+      if (currentStatus === 301 || currentStatus === 302 || currentStatus === 303) {
+        currentUrl = response.headers['location'];
+      }
+      // Check for meta refresh or JS redirect in 200 response
+      if (!currentUrl && currentStatus === 200) {
+        const metaMatch = currentBody.match(/url=([^"'\s>]+)/i);
+        const jsMatch = currentBody.match(/(?:window\.location|location\.href)\s*=\s*['"]([^'"]+)['"]/i);
+        currentUrl = metaMatch?.[1] || jsMatch?.[1];
+        if (currentUrl) {
+          console.log(`[SII Auth] Found redirect URL in body: ${currentUrl}`);
         }
       }
 
-      // If 302 redirect and no cookies yet, follow the redirect manually to get cookies
-      if (!tokenValue && (response.status === 301 || response.status === 302)) {
-        const redirectUrl = response.headers['location'];
-        if (redirectUrl) {
-          const cookieHeader = allCookies.join('; ');
-          const redirectResponse = await this.client.get(redirectUrl, {
-            maxRedirects: 0,
-            validateStatus: () => true,
-            headers: {
-              ...(cookieHeader ? { 'Cookie': cookieHeader } : {}),
-            },
-          });
-          const redirectSetCookies: string[] = redirectResponse.headers['set-cookie'] || [];
-          for (const cookie of redirectSetCookies) {
-            const nameValue = cookie.split(';')[0];
-            allCookies.push(nameValue);
-            if (nameValue.startsWith('TOKEN=')) {
-              tokenValue = nameValue.substring('TOKEN='.length);
-            }
-          }
+      for (let hop = 0; hop < 5 && currentUrl && !tokenValue; hop++) {
+        // Resolve relative URLs
+        if (currentUrl.startsWith('/')) {
+          const urlObj = new URL(SII_AUTH_URL);
+          currentUrl = `${urlObj.protocol}//${urlObj.host}${currentUrl}`;
+        }
+        console.log(`[SII Auth] Step ${hop + 2} - Following redirect to: ${currentUrl}`);
+
+        const cookieHeader = allCookies.join('; ');
+        const redirectResponse = await this.client.get(currentUrl, {
+          maxRedirects: 0,
+          validateStatus: () => true,
+          headers: {
+            'Cookie': cookieHeader,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          },
+        });
+
+        currentStatus = redirectResponse.status;
+        currentBody = typeof redirectResponse.data === 'string' ? redirectResponse.data : '';
+        console.log(`[SII Auth] Step ${hop + 2} - Status: ${currentStatus}`);
+
+        extractCookies(redirectResponse.headers);
+
+        // Check for more redirects
+        currentUrl = undefined;
+        if (currentStatus === 301 || currentStatus === 302 || currentStatus === 303) {
+          currentUrl = redirectResponse.headers['location'];
+        }
+        if (!currentUrl && currentStatus === 200 && !tokenValue) {
+          const metaMatch = currentBody.match(/url=([^"'\s>]+)/i);
+          const jsMatch = currentBody.match(/(?:window\.location|location\.href)\s*=\s*['"]([^'"]+)['"]/i);
+          currentUrl = metaMatch?.[1] || jsMatch?.[1];
         }
       }
 
       if (!tokenValue) {
-        const status = response.status;
-        const bodySnippet = responseText.substring(0, 300);
-        console.error(`[SII Auth] No TOKEN. Status: ${status}, Cookies: ${JSON.stringify(setCookies)}, Body: ${bodySnippet}`);
+        const bodySnippet = responseText.substring(0, 500);
+        console.error(`[SII Auth] No TOKEN after all steps. Cookies: ${allCookies.map(c => c.split('=')[0]).join(', ')}`);
+        console.error(`[SII Auth] Initial body: ${bodySnippet}`);
         throw new SiiAuthError(
-          `No se recibio TOKEN del SII (status ${status}, ${setCookies.length} cookies). ` +
+          `No se recibio TOKEN del SII (status ${response.status}, ${allCookies.length} cookies: ${allCookies.map(c => c.split('=')[0]).join(', ')}). ` +
           `Verifique que las credenciales sean correctas.`
         );
       }
+
+      console.log(`[SII Auth] Success! TOKEN obtained, ${allCookies.length} total cookies`);
 
       this.session = {
         token: tokenValue,
