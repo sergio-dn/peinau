@@ -1,25 +1,18 @@
 /**
- * RPETC (Registro de Compras) Query Module
+ * Registro de Compras y Ventas (RCV) Query Module
  *
- * Queries the SII Registro de Compras (Purchase Registry) to get
- * a list of all DTEs (electronic tax documents) received by the company.
+ * Queries the SII Registro de Compras to get received DTEs.
  *
- * The RPETC endpoint is at:
- * https://www4.sii.cl/registrocompaboraborUI/services/data/facadeService/getDetalleRPTCE
+ * Endpoint: POST https://www4.sii.cl/consdcvinternetui/services/data/facadeService/getDetalleCompra
  *
- * It returns JSON with the list of received DTEs including:
- * - Document type (tipo_dte)
- * - Folio number
- * - Issuer RUT and name
- * - Amounts (neto, exento, iva, total)
- * - Reception date
- * - Status
+ * Requires TOKEN cookie from authenticated SII session.
+ * Request body is JSON with metaData (conversationId = TOKEN) and data params.
  */
 
 import type { SiiAuth } from './auth.js';
 import type { RpetcQuery, RpetcEntry } from './types.js';
 
-const RPETC_BASE_URL = 'https://www4.sii.cl/registrocompaboraborUI/services/data/facadeService';
+const RCV_BASE_URL = 'https://www4.sii.cl/consdcvinternetui/services/data/facadeService';
 
 export class RpetcClient {
   constructor(private auth: SiiAuth) {}
@@ -31,37 +24,61 @@ export class RpetcClient {
     const session = await this.auth.getSession();
     const client = this.auth.getClient();
 
-    const rutClean = query.rutReceptor.replace(/\./g, '').replace('-', '');
-    const rutBody = rutClean.slice(0, -1);
-    const dv = rutClean.slice(-1);
+    // RUT receptor: strip dots, split rut-dv
+    const rutClean = query.rutReceptor.replace(/\./g, '');
+    const rutRaw = rutClean.replace(/[^0-9kK]/g, '');
+    const rutBody = rutRaw.slice(0, -1);
+    const dv = rutRaw.slice(-1).toUpperCase();
+
+    // Period format: YYYYMM (no separator)
+    const periodo = query.periodoDesde.replace(/-/g, '');
+
+    const cookieStr = session.cookies.join('; ');
 
     try {
-      // Get the RPETC data - the SII returns JSON for this endpoint
-      const response = await client.get(
-        `${RPETC_BASE_URL}/getDetalleRPTCE`,
+      const response = await client.post(
+        `${RCV_BASE_URL}/getDetalleCompra`,
         {
-          params: {
-            rutEmpresa: rutBody,
-            dvEmpresa: dv,
-            periodoDesde: query.periodoDesde,
-            periodoHasta: query.periodoHasta,
-            estado: query.estado || 'REGISTRO',
+          metaData: {
+            conversationId: session.token,
+            namespace: 'cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/getDetalleCompra',
+            page: null,
+            transactionId: '0',
           },
+          data: {
+            rutEmisor: rutBody,
+            dvEmisor: dv,
+            ptributario: periodo,
+            estadoContab: query.estado || 'REGISTRO',
+            codTipoDoc: 0, // 0 = all document types
+            operacion: 'COMPRA',
+          },
+        },
+        {
           headers: {
+            'Content-Type': 'application/json;charset=utf-8',
             'Accept': 'application/json',
-            'Cookie': session.cookies.join('; '),
+            'Cookie': cookieStr,
           },
+          validateStatus: () => true,
         }
       );
 
       const data = response.data;
+
+      // Handle error responses
+      if (response.status !== 200) {
+        console.warn(`[RPETC] Status ${response.status} for period ${periodo}`);
+        return [];
+      }
+
       if (!data || !data.data) {
         return [];
       }
 
-      return this.parseRpetcResponse(data.data);
+      return this.parseRcvResponse(data.data);
     } catch (error) {
-      throw new RpetcError(`Failed to query RPETC: ${(error as Error).message}`);
+      throw new RpetcError(`Failed to query RCV: ${(error as Error).message}`);
     }
   }
 
@@ -69,7 +86,7 @@ export class RpetcClient {
    * Get received DTEs for a specific month
    */
   async getMonthlyDtes(rutReceptor: string, year: number, month: number): Promise<RpetcEntry[]> {
-    const periodo = `${year}-${String(month).padStart(2, '0')}`;
+    const periodo = `${year}${String(month).padStart(2, '0')}`;
     return this.queryReceivedDtes({
       rutReceptor,
       periodoDesde: periodo,
@@ -85,12 +102,13 @@ export class RpetcClient {
     return this.getMonthlyDtes(rutReceptor, now.getFullYear(), now.getMonth() + 1);
   }
 
-  private parseRpetcResponse(data: any[]): RpetcEntry[] {
+  private parseRcvResponse(data: any[]): RpetcEntry[] {
+    if (!Array.isArray(data)) return [];
     return data.map((item: any) => ({
-      tipoDte: parseInt(item.dhdrTipoDte || item.tipo_dte || '0'),
-      folio: parseInt(item.detFolio || item.folio || '0'),
+      tipoDte: parseInt(item.dhdrTipoDte || item.detTipoDte || item.tipo_dte || '0'),
+      folio: parseInt(item.detNroDoc || item.detFolio || item.folio || '0'),
       fechaEmision: item.detFchDoc || item.fecha_emision || '',
-      rutEmisor: this.formatRutFromParts(item.detRutDoc, item.detDvDoc),
+      rutEmisor: this.formatRut(item.detRutDoc, item.detDvDoc),
       razonSocialEmisor: item.detRznSoc || item.razon_social || '',
       montoExento: parseInt(item.detMntExe || '0'),
       montoNeto: parseInt(item.detMntNeto || item.monto_neto || '0'),
@@ -101,7 +119,7 @@ export class RpetcClient {
     }));
   }
 
-  private formatRutFromParts(rut?: string, dv?: string): string {
+  private formatRut(rut?: string, dv?: string): string {
     if (!rut || !dv) return '';
     return `${rut}-${dv}`;
   }

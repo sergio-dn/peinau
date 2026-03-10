@@ -11,7 +11,7 @@
 
 import type { SiiAuth } from './auth.js';
 
-const DTE_DOWNLOAD_URL = 'https://www4.sii.cl/registrocompaboraborUI/services/data/facadeService/getDteXML';
+const DTE_DOWNLOAD_URL = 'https://www4.sii.cl/consdcvinternetui/services/data/facadeService/getDteXML';
 
 export class DteDownloader {
   constructor(private auth: SiiAuth) {}
