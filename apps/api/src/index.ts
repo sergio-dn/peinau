@@ -20,7 +20,7 @@ const app = express();
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: env.FRONTEND_URL.split(',').map(u => u.trim()),
+  origin: env.FRONTEND_URL.split(',').map(u => u.trim().replace(/\/+$/, '')),
   credentials: true,
 }));
 app.use(morgan('short'));
