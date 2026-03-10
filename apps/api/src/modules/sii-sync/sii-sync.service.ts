@@ -30,14 +30,32 @@ export class SiiSyncService {
       const downloader = new DteDownloader(auth);
       const parser = new DteParser();
 
-      // Query current and previous month
+      // Only sync from 2026-01 onwards to avoid overwhelming the DB
+      const SYNC_START_YEAR = 2026;
+      const SYNC_START_MONTH = 1; // January
+
       const now = new Date();
-      const currentMonth = await rpetc.getMonthlyDtes(company.rut, now.getFullYear(), now.getMonth() + 1);
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth() + 1; // 1-based
 
-      const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const prevMonth = await rpetc.getMonthlyDtes(company.rut, prevDate.getFullYear(), prevDate.getMonth() + 1);
+      const allDtes: Awaited<ReturnType<typeof rpetc.getMonthlyDtes>> = [];
 
-      const allDtes = [...currentMonth, ...prevMonth];
+      // Iterate from start date to current month
+      let year = SYNC_START_YEAR;
+      let month = SYNC_START_MONTH;
+      while (year < currentYear || (year === currentYear && month <= currentMonth)) {
+        try {
+          const monthDtes = await rpetc.getMonthlyDtes(company.rut, year, month);
+          allDtes.push(...monthDtes);
+        } catch (err) {
+          console.warn(`[SII Sync] Error fetching ${year}-${String(month).padStart(2, '0')}:`, (err as Error).message);
+        }
+        month++;
+        if (month > 12) {
+          month = 1;
+          year++;
+        }
+      }
       let newCount = 0;
 
       for (const dte of allDtes) {
