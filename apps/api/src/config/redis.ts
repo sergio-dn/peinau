@@ -8,14 +8,11 @@ export function getRedis(): IORedis {
     _redis = new IORedis(env.REDIS_URL, {
       maxRetriesPerRequest: null,
       lazyConnect: true,
+      enableOfflineQueue: false,
+    });
+    _redis.on('error', (err) => {
+      console.warn('[Redis] Connection error (suppressed):', err.message);
     });
   }
   return _redis;
 }
-
-// Backwards compat – lazy getter
-export const redis = new Proxy({} as IORedis, {
-  get(_target, prop) {
-    return (getRedis() as any)[prop];
-  },
-});

@@ -47,12 +47,18 @@ app.use(errorHandler);
 app.listen(env.PORT, () => {
   console.log(`API server running on http://localhost:${env.PORT}`);
 
-  // Start background workers (non-blocking – skip if Redis unavailable)
-  try {
-    startSiiSyncWorker();
-    scheduleSiiSync().catch(err => console.warn('[SII Sync] Schedule failed:', err.message));
-  } catch (err: any) {
-    console.warn('[Workers] Skipped – Redis not available:', err.message);
+  // Start background workers only if a real Redis is configured
+  const redisUrl = process.env.REDIS_URL || '';
+  if (redisUrl && !redisUrl.includes('localhost') && !redisUrl.includes('127.0.0.1')) {
+    try {
+      startSiiSyncWorker();
+      scheduleSiiSync().catch(err => console.warn('[SII Sync] Schedule failed:', err.message));
+      console.log('[Workers] SII Sync worker started');
+    } catch (err: any) {
+      console.warn('[Workers] Skipped:', err.message);
+    }
+  } else {
+    console.log('[Workers] Skipped – no external Redis configured');
   }
 });
 
