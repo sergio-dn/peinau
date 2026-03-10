@@ -6,23 +6,61 @@
  * Endpoint: POST https://www4.sii.cl/consdcvinternetui/services/data/facadeService/getDetalleCompra
  *
  * Requires TOKEN cookie from authenticated SII session.
- * Request body is JSON with metaData (conversationId = TOKEN) and data params.
+ * Uses tough-cookie CookieJar to share cookies between session init and API calls.
  */
 
 import axios, { AxiosInstance } from 'axios';
+import { CookieJar, Cookie } from 'tough-cookie';
+import { wrapper } from 'axios-cookiejar-support';
 import type { SiiAuth } from './auth.js';
 import type { RpetcQuery, RpetcEntry } from './types.js';
 
 const RCV_BASE_URL = 'https://www4.sii.cl/consdcvinternetui/services/data/facadeService';
 const RCV_PAGE_URL = 'https://www4.sii.cl/consdcvinternetui/';
+const RCV_DOMAIN = 'https://www4.sii.cl';
 
 export class RpetcClient {
-  private rcvClient: AxiosInstance;
+  private rcvClient: AxiosInstance | null = null;
+  private jar: CookieJar | null = null;
   private initialized = false;
 
-  constructor(private auth: SiiAuth) {
-    // Create a separate axios instance for RCV with correct headers
-    this.rcvClient = axios.create({
+  constructor(private auth: SiiAuth) {}
+
+  // Common DTE types for purchases
+  private static readonly DTE_TYPES = [33, 34, 43, 46, 56, 61];
+
+  /**
+   * Create an axios instance with a shared CookieJar.
+   * Injects all auth cookies into the jar so they're sent with every request.
+   */
+  private async createClientWithJar(): Promise<{ client: AxiosInstance; token: string }> {
+    const session = await this.auth.getSession();
+    const jar = new CookieJar();
+
+    // Inject all auth cookies into the jar for www4.sii.cl domain
+    for (const cookieStr of session.cookies) {
+      try {
+        // cookieStr is "NAME=VALUE" — we need to add domain/path for tough-cookie
+        const [name, ...valueParts] = cookieStr.split('=');
+        const value = valueParts.join('=');
+        const cookie = new Cookie({
+          key: name.trim(),
+          value: value,
+          domain: 'sii.cl',
+          path: '/',
+        });
+        await jar.setCookie(cookie.toString(), RCV_DOMAIN);
+      } catch (err) {
+        console.warn(`[RPETC] Failed to set cookie in jar: ${cookieStr.split('=')[0]} - ${(err as Error).message}`);
+      }
+    }
+
+    // Log what we injected
+    const jarCookies = await jar.getCookies(RCV_DOMAIN);
+    console.log(`[RPETC] Cookie jar initialized with ${jarCookies.length} cookies: ${jarCookies.map(c => c.key).join(', ')}`);
+
+    const client = wrapper(axios.create({
+      jar,
       timeout: 30000,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -30,27 +68,36 @@ export class RpetcClient {
         'Origin': 'https://www4.sii.cl',
         'Referer': 'https://www4.sii.cl/consdcvinternetui/',
       },
-    });
+    }));
+
+    this.jar = jar;
+    this.rcvClient = client;
+    return { client, token: session.token };
   }
 
-  // Common DTE types for purchases
-  private static readonly DTE_TYPES = [33, 34, 43, 46, 56, 61];
-
   /**
-   * Initialize RCV session by visiting the page (sets any needed server-side state)
+   * Initialize RCV session by visiting the page.
+   * This sets server-side state and additional cookies (stored in the jar automatically).
    */
-  private async initSession(cookieStr: string): Promise<void> {
-    if (this.initialized) return;
+  private async initSession(): Promise<void> {
+    if (this.initialized && this.rcvClient) return;
+
+    const { client } = await this.createClientWithJar();
+
     try {
-      console.log('[RPETC] Initializing RCV session...');
-      await this.rcvClient.get(RCV_PAGE_URL, {
+      console.log('[RPETC] Initializing RCV session (GET page)...');
+      await client.get(RCV_PAGE_URL, {
         headers: {
-          'Cookie': cookieStr,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         },
         validateStatus: () => true,
         maxRedirects: 5,
       });
+
+      // Log cookies after session init
+      const postInitCookies = await this.jar!.getCookies(RCV_DOMAIN);
+      console.log(`[RPETC] After session init: ${postInitCookies.length} cookies: ${postInitCookies.map(c => c.key).join(', ')}`);
+
       this.initialized = true;
       console.log('[RPETC] RCV session initialized');
     } catch (err) {
@@ -59,23 +106,21 @@ export class RpetcClient {
   }
 
   /**
-   * Build the full cookie string from auth session
+   * Ensure we have an initialized client with cookie jar
    */
-  private async getCookieStr(): Promise<{ token: string; cookieStr: string }> {
+  private async getClient(): Promise<{ client: AxiosInstance; token: string }> {
+    await this.initSession();
     const session = await this.auth.getSession();
-    // Use ALL cookies from the auth session, not just TOKEN
-    const cookieStr = session.cookies?.join('; ') || `TOKEN=${session.token}; CSESSIONID=${session.token}`;
-    return { token: session.token, cookieStr };
+    return { client: this.rcvClient!, token: session.token };
   }
 
   /**
-   * Query the Registro de Compras for received DTEs in a period
+   * Query the Registro de Compras for received DTEs in a period.
+   * First calls getResumen to discover which DTE types have documents,
+   * then queries detalle only for types that exist.
    */
   async queryReceivedDtes(query: RpetcQuery): Promise<RpetcEntry[]> {
-    const { token, cookieStr } = await this.getCookieStr();
-
-    // Initialize RCV session first
-    await this.initSession(cookieStr);
+    const { client, token } = await this.getClient();
 
     // RUT receptor: strip dots, split rut-dv
     const rutClean = query.rutReceptor.replace(/\./g, '');
@@ -86,15 +131,33 @@ export class RpetcClient {
     // Period format: YYYYMM (no separator)
     const periodo = query.periodoDesde.replace(/-/g, '');
 
+    // Step 1: Get resumen to know which types have documents
+    let typesToQuery = RpetcClient.DTE_TYPES;
+    try {
+      const resumenResult = await this.callGetResumen(client, token, rutBody, dv, periodo);
+      if (resumenResult && Array.isArray(resumenResult.data)) {
+        const typesWithDocs = resumenResult.data
+          .filter((item: any) => (item.rsmnTotDoc || 0) > 0)
+          .map((item: any) => parseInt(item.rsmnTipoDocInteger || item.rsmnTipoDoc || '0'))
+          .filter((t: number) => t > 0);
+        if (typesWithDocs.length > 0) {
+          typesToQuery = typesWithDocs;
+          console.log(`[RPETC] Resumen found documents for types: ${typesWithDocs.join(', ')}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[RPETC] getResumen failed, querying all types: ${(err as Error).message}`);
+    }
+
     const estados = ['REGISTRO', 'PENDIENTE', 'NO_INCLUIR', 'RECLAMADO'];
     const allEntries: RpetcEntry[] = [];
     const seen = new Set<string>();
 
-    for (const tipoDte of RpetcClient.DTE_TYPES) {
+    for (const tipoDte of typesToQuery) {
       for (const estado of estados) {
         try {
           const entries = await this.queryRcvWithEstado(
-            token, cookieStr,
+            client, token,
             rutBody, dv, periodo, estado, tipoDte
           );
           for (const entry of entries) {
@@ -116,9 +179,47 @@ export class RpetcClient {
     return allEntries;
   }
 
-  private async queryRcvWithEstado(
+  private async callGetResumen(
+    client: AxiosInstance,
     token: string,
-    cookieStr: string,
+    rutBody: string,
+    dv: string,
+    periodo: string,
+  ): Promise<any> {
+    const requestBody = {
+      metaData: {
+        conversationId: token,
+        namespace: 'cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/getResumen',
+        page: null,
+        transactionId: '0',
+      },
+      data: {
+        rutEmisor: rutBody,
+        dvEmisor: dv,
+        ptributario: periodo,
+        operacion: 'COMPRA',
+        accionRecaptcha: 'RCV_DDETC',
+        tokenRecaptcha: 'c3',
+      },
+    };
+
+    const resp = await client.post(
+      `${RCV_BASE_URL}/getResumen`,
+      requestBody,
+      {
+        headers: {
+          'Content-Type': 'application/json;charset=utf-8',
+          'Accept': 'application/json, text/plain, */*',
+        },
+        validateStatus: () => true,
+      },
+    );
+    return resp.data;
+  }
+
+  private async queryRcvWithEstado(
+    client: AxiosInstance,
+    token: string,
     rutBody: string,
     dv: string,
     periodo: string,
@@ -145,16 +246,13 @@ export class RpetcClient {
         },
       };
 
-      console.log(`[RPETC] Querying COMPRA RUT ${rutBody}-${dv}, period ${periodo}, tipo=${codTipoDoc}, estado=${estadoContab}`);
-
-      const response = await this.rcvClient.post(
+      const response = await client.post(
         `${RCV_BASE_URL}/getDetalleCompra`,
         requestBody,
         {
           headers: {
             'Content-Type': 'application/json;charset=utf-8',
             'Accept': 'application/json, text/plain, */*',
-            'Cookie': cookieStr,
           },
           validateStatus: () => true,
         }
@@ -188,11 +286,7 @@ export class RpetcClient {
     estadoContab: string,
     codTipoDoc: number,
   ): Promise<{ status: number; data: any }> {
-    const { token, cookieStr } = await this.getCookieStr();
-    await this.initSession(cookieStr);
-
-    // Parse RUT from the auth session
-    const session = await this.auth.getSession();
+    const { client, token } = await this.getClient();
 
     const requestBody = {
       metaData: {
@@ -202,7 +296,7 @@ export class RpetcClient {
         transactionId: '0',
       },
       data: {
-        rutEmisor: '', // Will be set by caller
+        rutEmisor: '',
         dvEmisor: '',
         ptributario: periodo,
         estadoContab,
@@ -213,14 +307,13 @@ export class RpetcClient {
       },
     };
 
-    const resp = await this.rcvClient.post(
+    const resp = await client.post(
       `${RCV_BASE_URL}/getDetalleCompra`,
       requestBody,
       {
         headers: {
           'Content-Type': 'application/json;charset=utf-8',
           'Accept': 'application/json, text/plain, */*',
-          'Cookie': cookieStr,
         },
         validateStatus: () => true,
       },
@@ -236,39 +329,10 @@ export class RpetcClient {
     dv: string,
     periodo: string,
   ): Promise<{ status: number; data: any }> {
-    const { token, cookieStr } = await this.getCookieStr();
-    await this.initSession(cookieStr);
+    const { client, token } = await this.getClient();
 
-    const requestBody = {
-      metaData: {
-        conversationId: token,
-        namespace: 'cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/getResumen',
-        page: null,
-        transactionId: '0',
-      },
-      data: {
-        rutEmisor: rutBody,
-        dvEmisor: dv,
-        ptributario: periodo,
-        operacion: 'COMPRA',
-        accionRecaptcha: 'RCV_DDETC',
-        tokenRecaptcha: 'c3',
-      },
-    };
-
-    const resp = await this.rcvClient.post(
-      `${RCV_BASE_URL}/getResumen`,
-      requestBody,
-      {
-        headers: {
-          'Content-Type': 'application/json;charset=utf-8',
-          'Accept': 'application/json, text/plain, */*',
-          'Cookie': cookieStr,
-        },
-        validateStatus: () => true,
-      },
-    );
-    return { status: resp.status, data: resp.data };
+    const resp = await this.callGetResumen(client, token, rutBody, dv, periodo);
+    return { status: 200, data: resp };
   }
 
   /**
@@ -281,8 +345,7 @@ export class RpetcClient {
     estadoContab: string,
     codTipoDoc: number,
   ): Promise<{ status: number; count: number; error: string | null; sample: any[] | null; rawKeys: string[] }> {
-    const { token, cookieStr } = await this.getCookieStr();
-    await this.initSession(cookieStr);
+    const { client, token } = await this.getClient();
 
     const requestBody = {
       metaData: {
@@ -303,14 +366,13 @@ export class RpetcClient {
       },
     };
 
-    const resp = await this.rcvClient.post(
+    const resp = await client.post(
       `${RCV_BASE_URL}/getDetalleCompra`,
       requestBody,
       {
         headers: {
           'Content-Type': 'application/json;charset=utf-8',
           'Accept': 'application/json, text/plain, */*',
-          'Cookie': cookieStr,
         },
         validateStatus: () => true,
       },

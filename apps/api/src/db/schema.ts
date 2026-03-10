@@ -157,6 +157,12 @@ export const invoices = pgTable('invoices', {
   siiTrackId: varchar('sii_track_id', { length: 100 }),
   rejectionReason: text('rejection_reason'),
   notes: text('notes'),
+  // Traceability fields
+  sourceSystem: varchar('source_system', { length: 50 }).default('sii_portal'),  // 'sii_portal' | 'sii_official'
+  sourceMode: varchar('source_mode', { length: 50 }).default('rcv_detalle'),     // 'rcv_detalle' | 'portal_xml' | 'soap_status'
+  rawSha256: varchar('raw_sha256', { length: 64 }),
+  importBatchId: uuid('import_batch_id'),
+  syncedAt: timestamp('synced_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
@@ -327,7 +333,9 @@ export const siiSyncLogs = pgTable('sii_sync_logs', {
   status: varchar('status', { length: 50 }).notNull(),
   invoicesFound: integer('invoices_found').default(0).notNull(),
   invoicesNew: integer('invoices_new').default(0).notNull(),
+  invoicesUpdated: integer('invoices_updated').default(0).notNull(),
   errorMessage: text('error_message'),
+  rawResponseSample: jsonb('raw_response_sample'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

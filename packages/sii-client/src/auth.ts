@@ -16,6 +16,7 @@ const SII_AUTH_URL = 'https://zeusr.sii.cl/cgi_AUT2000/CAutInicio.cgi';
 const SESSION_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_AUTH_RETRIES = 3;
 const RETRY_DELAY_MS = 2000;
+const POST_LOGIN_PAGE_DELAY_MS = 500; // Delay after GET login page before POST
 
 export class SiiAuth {
   private session: SiiSession | null = null;
@@ -110,6 +111,9 @@ export class SiiAuth {
     });
     extractCookies(loginPage.headers);
     console.log(`[SII Auth] Login page status: ${loginPage.status}, initial cookies: ${allCookies.map(c => c.split('=')[0]).join(', ')}`);
+
+    // Wait for load balancer to register the session
+    await new Promise(r => setTimeout(r, POST_LOGIN_PAGE_DELAY_MS));
 
     // Step 1: POST login form WITH the initial cookies
     console.log(`[SII Auth] Attempt ${attempt} - POST to ${SII_AUTH_URL}`);
@@ -218,9 +222,10 @@ export class SiiAuth {
 
     if (!tokenValue) {
       const cookieNames = allCookies.map(c => c.split('=')[0]).join(', ');
-      const bodySnippet = responseText.substring(0, 300).replace(/\s+/g, ' ');
-      console.error(`[SII Auth] No TOKEN. Cookies: ${cookieNames}`);
-      console.error(`[SII Auth] Body snippet: ${bodySnippet}`);
+      const bodySnippet = responseText.substring(0, 500).replace(/\s+/g, ' ');
+      console.error(`[SII Auth] No TOKEN after all strategies. Cookies collected: ${cookieNames}`);
+      console.error(`[SII Auth] Full cookies: ${allCookies.join('; ')}`);
+      console.error(`[SII Auth] Initial POST body (500 chars): ${bodySnippet}`);
       throw new SiiAuthError(
         `No se recibio TOKEN del SII (status ${response.status}, ${allCookies.length} cookies: ${cookieNames}). ` +
         `Verifique que las credenciales sean correctas.`

@@ -198,7 +198,7 @@ export async function debugSiiQuery(req: Request, res: Response) {
   try {
     const password = decrypt(company.siiPasswordEncrypted);
     const auth = new SiiAuth({ rut: company.siiUsername, password });
-    await auth.authenticate();
+    const session = await auth.authenticate();
 
     const rpetc = new RpetcClient(auth);
 
@@ -211,7 +211,7 @@ export async function debugSiiQuery(req: Request, res: Response) {
     const now = new Date();
     const periodo = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    // Use the new RpetcClient with correct headers + session init
+    // Use the new RpetcClient with cookie jar + session init
     const resumen = await rpetc.rawResumen(rutBody, dv, periodo);
     const detalle33 = await rpetc.rawDetalle(rutBody, dv, periodo, 'REGISTRO', 33);
     const detalle34 = await rpetc.rawDetalle(rutBody, dv, periodo, 'REGISTRO', 34);
@@ -223,20 +223,34 @@ export async function debugSiiQuery(req: Request, res: Response) {
 
     const prevResumen = await rpetc.rawResumen(rutBody, dv, prevPeriodo);
 
+    // Try a full query to see actual document count
+    let fullQueryCount = 0;
+    try {
+      const fullResult = await rpetc.getMonthlyDtes(company.rut, now.getFullYear(), now.getMonth() + 1);
+      fullQueryCount = fullResult.length;
+    } catch (err: any) {
+      console.warn(`[SII Debug] Full query failed: ${err.message}`);
+    }
+
     res.json({
       companyRut: company.rut,
       parsedRut: `${rutBody}-${dv}`,
       siiUser: company.siiUsername,
+      authCookies: session.cookies.map((c: string) => c.split('=')[0]),
       currentPeriod: periodo,
       previousPeriod: prevPeriodo,
+      fullQueryCount,
       resumen: {
         [periodo]: {
           totDocRes: resumen.data?.totDocRes ?? null,
+          dataCabecera: resumen.data?.dataCabecera || null,
+          dataCount: Array.isArray(resumen.data?.data) ? resumen.data.data.length : 0,
           data: resumen.data?.data || [],
           status: resumen.status,
         },
         [prevPeriodo]: {
           totDocRes: prevResumen.data?.totDocRes ?? null,
+          dataCount: Array.isArray(prevResumen.data?.data) ? prevResumen.data.data.length : 0,
           data: prevResumen.data?.data || [],
           status: prevResumen.status,
         },
