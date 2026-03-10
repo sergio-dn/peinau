@@ -11,9 +11,7 @@
  * but clave tributaria uses the simpler HTTP form method.
  */
 
-import axios from 'axios';
-import { wrapper } from 'axios-cookiejar-support';
-import { CookieJar } from 'tough-cookie';
+import axios, { AxiosInstance } from 'axios';
 import type { SiiCredentials, SiiSession } from './types.js';
 
 const SII_AUTH_URL = 'https://zeusr.sii.cl/cgi_AUT2000/CAutInwor498.cgi';
@@ -21,22 +19,18 @@ const SESSION_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 
 export class SiiAuth {
   private session: SiiSession | null = null;
-  private cookieJar: CookieJar;
-  private client: ReturnType<typeof wrapper>;
+  private client: AxiosInstance;
 
   constructor(private credentials: SiiCredentials) {
-    this.cookieJar = new CookieJar();
-    this.client = wrapper(axios.create({
-      jar: this.cookieJar,
-      withCredentials: true,
-      maxRedirects: 5,
+    this.client = axios.create({
       timeout: 30000,
+      maxRedirects: 0, // Don't follow redirects so we can capture set-cookie
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'text/html,application/xhtml+xml',
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-    }));
+    });
   }
 
   async authenticate(): Promise<SiiSession> {
@@ -53,43 +47,50 @@ export class SiiAuth {
 
     try {
       const response = await this.client.post(SII_AUTH_URL, formData.toString(), {
-        validateStatus: (status) => status < 400 || status === 302,
+        validateStatus: () => true, // Accept any status to inspect response
       });
 
-      // Check if authentication was successful by looking for error indicators
       const responseText = typeof response.data === 'string' ? response.data : '';
+
+      // Check for known error messages in response body
       if (responseText.includes('Clave Incorrecta') || responseText.includes('RUT NO VALIDO')) {
-        throw new SiiAuthError('Invalid SII credentials');
+        throw new SiiAuthError('Credenciales SII invalidas');
       }
 
-      // Extract TOKEN from cookie jar first, then from set-cookie header
-      const cookies = await this.cookieJar.getCookies(SII_AUTH_URL);
-      let tokenValue = cookies.find(c => c.key === 'TOKEN')?.value;
+      // Extract all cookies from set-cookie headers
+      const setCookies: string[] = response.headers['set-cookie'] || [];
+      const allCookies: string[] = [];
+      let tokenValue: string | undefined;
 
-      if (!tokenValue) {
-        // Try extracting from response headers directly
-        const setCookies = response.headers['set-cookie'] || [];
-        const tokenHeader = setCookies.find((c: string) => c.includes('TOKEN='));
-        if (tokenHeader) {
-          const match = tokenHeader.match(/TOKEN=([^;]+)/);
-          tokenValue = match?.[1];
+      for (const cookie of setCookies) {
+        const nameValue = cookie.split(';')[0]; // e.g. "TOKEN=abc123"
+        allCookies.push(nameValue);
+        if (nameValue.startsWith('TOKEN=')) {
+          tokenValue = nameValue.substring('TOKEN='.length);
         }
       }
 
       if (!tokenValue) {
-        throw new SiiAuthError('No TOKEN cookie received from SII');
+        // Log response details for debugging
+        const status = response.status;
+        const bodySnippet = responseText.substring(0, 500);
+        console.error(`[SII Auth] No TOKEN cookie. Status: ${status}, Cookies: ${JSON.stringify(setCookies)}, Body: ${bodySnippet}`);
+        throw new SiiAuthError(
+          `No se recibio TOKEN del SII (status ${status}, ${setCookies.length} cookies). ` +
+          `Verifique que las credenciales sean correctas.`
+        );
       }
 
       this.session = {
         token: tokenValue,
-        cookies: cookies.map(c => `${c.key}=${c.value}`),
+        cookies: allCookies,
         expiresAt: new Date(Date.now() + SESSION_DURATION_MS),
       };
 
       return this.session;
     } catch (error) {
       if (error instanceof SiiAuthError) throw error;
-      throw new SiiAuthError(`SII authentication failed: ${(error as Error).message}`);
+      throw new SiiAuthError(`Error de conexion al SII: ${(error as Error).message}`);
     }
   }
 
@@ -100,12 +101,12 @@ export class SiiAuth {
     return this.session;
   }
 
-  getCookieJar(): CookieJar {
-    return this.cookieJar;
-  }
-
   getClient() {
     return this.client;
+  }
+
+  getSessionCookies(): string {
+    return this.session?.cookies.join('; ') || '';
   }
 
   isAuthenticated(): boolean {
