@@ -14,6 +14,8 @@ import type { SiiCredentials, SiiSession } from './types.js';
 
 const SII_AUTH_URL = 'https://zeusr.sii.cl/cgi_AUT2000/CAutInicio.cgi';
 const SESSION_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+const MAX_AUTH_RETRIES = 3;
+const RETRY_DELAY_MS = 2000;
 
 export class SiiAuth {
   private session: SiiSession | null = null;
@@ -34,6 +36,31 @@ export class SiiAuth {
   }
 
   async authenticate(): Promise<SiiSession> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= MAX_AUTH_RETRIES; attempt++) {
+      try {
+        const session = await this.tryAuthenticate(attempt);
+        return session;
+      } catch (error) {
+        lastError = error as Error;
+        // Don't retry on credential errors
+        if (error instanceof SiiAuthError &&
+            (error.message.includes('Clave SII incorrecta') ||
+             error.message.includes('RUT SII no valido'))) {
+          throw error;
+        }
+        if (attempt < MAX_AUTH_RETRIES) {
+          console.log(`[SII Auth] Attempt ${attempt} failed, retrying in ${RETRY_DELAY_MS}ms...`);
+          await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+        }
+      }
+    }
+
+    throw lastError || new SiiAuthError('Error de autenticacion SII');
+  }
+
+  private async tryAuthenticate(attempt: number): Promise<SiiSession> {
     // Clean RUT: remove dots and spaces, keep dash
     const rutClean = this.credentials.rut.replace(/[\.\s]/g, '');
     // Strip all non-alphanumeric to get raw digits + DV
@@ -52,126 +79,172 @@ export class SiiAuth {
       clave: this.credentials.password,
     });
 
-    try {
-      // Collect all cookies across multiple requests/redirects
-      const allCookies: string[] = [];
-      let tokenValue: string | undefined;
+    // Collect all cookies across multiple requests/redirects
+    const allCookies: string[] = [];
+    let tokenValue: string | undefined;
 
-      const extractCookies = (headers: any) => {
-        const setCookies: string[] = headers['set-cookie'] || [];
-        for (const cookie of setCookies) {
-          const nameValue = cookie.split(';')[0];
+    const extractCookies = (headers: any) => {
+      const setCookies: string[] = headers['set-cookie'] || [];
+      for (const cookie of setCookies) {
+        const nameValue = cookie.split(';')[0];
+        // Skip duplicate cookie names, keep latest
+        const cookieName = nameValue.split('=')[0];
+        const existingIdx = allCookies.findIndex(c => c.startsWith(cookieName + '='));
+        if (existingIdx >= 0) {
+          allCookies[existingIdx] = nameValue;
+        } else {
           allCookies.push(nameValue);
-          if (nameValue.startsWith('TOKEN=')) {
-            tokenValue = nameValue.substring('TOKEN='.length);
-          }
         }
-        console.log(`[SII Auth] Cookies extracted: ${setCookies.map(c => c.split(';')[0].split('=')[0]).join(', ') || 'none'}`);
-      };
+        if (nameValue.startsWith('TOKEN=')) {
+          tokenValue = nameValue.substring('TOKEN='.length);
+        }
+      }
+    };
 
-      // Step 1: POST login form
-      const response = await this.client.post(SII_AUTH_URL, formData.toString(), {
+    // Strategy 1: POST with manual redirect following (maxRedirects: 0)
+    console.log(`[SII Auth] Attempt ${attempt} - POST to ${SII_AUTH_URL}`);
+    const response = await this.client.post(SII_AUTH_URL, formData.toString(), {
+      maxRedirects: 0,
+      validateStatus: () => true,
+    });
+
+    const responseText = typeof response.data === 'string' ? response.data : '';
+    console.log(`[SII Auth] Step 1 - Status: ${response.status}, Body length: ${responseText.length}`);
+
+    // Check for known SII error messages
+    if (responseText.includes('Clave Incorrecta') || responseText.includes('CLAVE INCORRECTA')) {
+      throw new SiiAuthError('Clave SII incorrecta');
+    }
+    if (responseText.includes('RUT NO VALIDO') || responseText.includes('Rut Inv')) {
+      throw new SiiAuthError('RUT SII no valido');
+    }
+
+    extractCookies(response.headers);
+
+    // Follow redirects manually (up to 5 hops) to collect all cookies
+    let currentUrl: string | undefined;
+    let currentStatus = response.status;
+    let currentBody = responseText;
+
+    // Check for HTTP redirect
+    if (currentStatus === 301 || currentStatus === 302 || currentStatus === 303) {
+      currentUrl = response.headers['location'];
+    }
+    // Check for meta refresh or JS redirect in 200 response
+    if (!currentUrl && currentStatus === 200) {
+      currentUrl = this.findRedirectUrl(currentBody);
+      if (currentUrl) {
+        console.log(`[SII Auth] Found redirect in body: ${currentUrl.substring(0, 100)}`);
+      }
+    }
+
+    for (let hop = 0; hop < 5 && currentUrl && !tokenValue; hop++) {
+      // Resolve relative URLs
+      if (currentUrl.startsWith('/')) {
+        const urlObj = new URL(SII_AUTH_URL);
+        currentUrl = `${urlObj.protocol}//${urlObj.host}${currentUrl}`;
+      }
+      console.log(`[SII Auth] Step ${hop + 2} - Following redirect to: ${currentUrl.substring(0, 100)}`);
+
+      const cookieHeader = allCookies.join('; ');
+      const redirectResponse = await this.client.get(currentUrl, {
         maxRedirects: 0,
         validateStatus: () => true,
+        headers: {
+          'Cookie': cookieHeader,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
       });
 
-      const responseText = typeof response.data === 'string' ? response.data : '';
-      console.log(`[SII Auth] Step 1 - Status: ${response.status}, Body length: ${responseText.length}`);
+      currentStatus = redirectResponse.status;
+      currentBody = typeof redirectResponse.data === 'string' ? redirectResponse.data : '';
+      console.log(`[SII Auth] Step ${hop + 2} - Status: ${currentStatus}, Body length: ${currentBody.length}`);
 
-      // Check for known SII error messages
-      if (responseText.includes('Clave Incorrecta')) {
-        throw new SiiAuthError('Clave SII incorrecta');
-      }
-      if (responseText.includes('RUT NO VALIDO') || responseText.includes('Rut Inv')) {
-        throw new SiiAuthError('RUT SII no valido');
-      }
+      extractCookies(redirectResponse.headers);
 
-      extractCookies(response.headers);
-
-      // Step 2: Follow redirects manually (up to 5 hops) to collect all cookies
-      let currentUrl: string | undefined;
-      let currentStatus = response.status;
-      let currentBody = responseText;
-
-      // Check for HTTP redirect
+      // Check for more redirects
+      currentUrl = undefined;
       if (currentStatus === 301 || currentStatus === 302 || currentStatus === 303) {
-        currentUrl = response.headers['location'];
+        currentUrl = redirectResponse.headers['location'];
       }
-      // Check for meta refresh or JS redirect in 200 response
-      if (!currentUrl && currentStatus === 200) {
-        const metaMatch = currentBody.match(/url=([^"'\s>]+)/i);
-        const jsMatch = currentBody.match(/(?:window\.location|location\.href)\s*=\s*['"]([^'"]+)['"]/i);
-        currentUrl = metaMatch?.[1] || jsMatch?.[1];
-        if (currentUrl) {
-          console.log(`[SII Auth] Found redirect URL in body: ${currentUrl}`);
-        }
+      if (!currentUrl && currentStatus === 200 && !tokenValue) {
+        currentUrl = this.findRedirectUrl(currentBody);
       }
-
-      for (let hop = 0; hop < 5 && currentUrl && !tokenValue; hop++) {
-        // Resolve relative URLs
-        if (currentUrl.startsWith('/')) {
-          const urlObj = new URL(SII_AUTH_URL);
-          currentUrl = `${urlObj.protocol}//${urlObj.host}${currentUrl}`;
-        }
-        console.log(`[SII Auth] Step ${hop + 2} - Following redirect to: ${currentUrl}`);
-
-        const cookieHeader = allCookies.join('; ');
-        const redirectResponse = await this.client.get(currentUrl, {
-          maxRedirects: 0,
-          validateStatus: () => true,
-          headers: {
-            'Cookie': cookieHeader,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          },
-        });
-
-        currentStatus = redirectResponse.status;
-        currentBody = typeof redirectResponse.data === 'string' ? redirectResponse.data : '';
-        console.log(`[SII Auth] Step ${hop + 2} - Status: ${currentStatus}`);
-
-        extractCookies(redirectResponse.headers);
-
-        // Check for more redirects
-        currentUrl = undefined;
-        if (currentStatus === 301 || currentStatus === 302 || currentStatus === 303) {
-          currentUrl = redirectResponse.headers['location'];
-        }
-        if (!currentUrl && currentStatus === 200 && !tokenValue) {
-          const metaMatch = currentBody.match(/url=([^"'\s>]+)/i);
-          const jsMatch = currentBody.match(/(?:window\.location|location\.href)\s*=\s*['"]([^'"]+)['"]/i);
-          currentUrl = metaMatch?.[1] || jsMatch?.[1];
-        }
-      }
-
-      if (!tokenValue) {
-        const bodySnippet = responseText.substring(0, 500);
-        console.error(`[SII Auth] No TOKEN after all steps. Cookies: ${allCookies.map(c => c.split('=')[0]).join(', ')}`);
-        console.error(`[SII Auth] Initial body: ${bodySnippet}`);
-        throw new SiiAuthError(
-          `No se recibio TOKEN del SII (status ${response.status}, ${allCookies.length} cookies: ${allCookies.map(c => c.split('=')[0]).join(', ')}). ` +
-          `Verifique que las credenciales sean correctas.`
-        );
-      }
-
-      console.log(`[SII Auth] Success! TOKEN obtained, ${allCookies.length} total cookies`);
-
-      // Ensure CSESSIONID is included (needed for RCV API)
-      const hasCSESSIONID = allCookies.some(c => c.startsWith('CSESSIONID='));
-      if (!hasCSESSIONID) {
-        allCookies.push(`CSESSIONID=${tokenValue}`);
-      }
-
-      this.session = {
-        token: tokenValue,
-        cookies: allCookies,
-        expiresAt: new Date(Date.now() + SESSION_DURATION_MS),
-      };
-
-      return this.session;
-    } catch (error) {
-      if (error instanceof SiiAuthError) throw error;
-      throw new SiiAuthError(`Error de conexion al SII: ${(error as Error).message}`);
     }
+
+    // Strategy 2: If no TOKEN yet, try again with auto-redirect following
+    if (!tokenValue) {
+      console.log(`[SII Auth] No TOKEN from manual redirects, trying auto-redirect strategy...`);
+      const autoResponse = await this.client.post(SII_AUTH_URL, formData.toString(), {
+        maxRedirects: 10,
+        validateStatus: () => true,
+      });
+      extractCookies(autoResponse.headers);
+
+      // Also check if the final page has a redirect
+      if (!tokenValue) {
+        const autoBody = typeof autoResponse.data === 'string' ? autoResponse.data : '';
+        const autoUrl = this.findRedirectUrl(autoBody);
+        if (autoUrl) {
+          console.log(`[SII Auth] Auto-redirect body has URL: ${autoUrl.substring(0, 100)}`);
+          const finalResp = await this.client.get(
+            autoUrl.startsWith('/') ? `https://zeusr.sii.cl${autoUrl}` : autoUrl,
+            {
+              maxRedirects: 5,
+              validateStatus: () => true,
+              headers: { 'Cookie': allCookies.join('; ') },
+            },
+          );
+          extractCookies(finalResp.headers);
+        }
+      }
+    }
+
+    if (!tokenValue) {
+      const cookieNames = allCookies.map(c => c.split('=')[0]).join(', ');
+      const bodySnippet = responseText.substring(0, 300).replace(/\s+/g, ' ');
+      console.error(`[SII Auth] No TOKEN. Cookies: ${cookieNames}`);
+      console.error(`[SII Auth] Body snippet: ${bodySnippet}`);
+      throw new SiiAuthError(
+        `No se recibio TOKEN del SII (status ${response.status}, ${allCookies.length} cookies: ${cookieNames}). ` +
+        `Verifique que las credenciales sean correctas.`
+      );
+    }
+
+    console.log(`[SII Auth] Success! TOKEN obtained, ${allCookies.length} total cookies`);
+
+    // Ensure CSESSIONID is included (needed for RCV API)
+    const hasCSESSIONID = allCookies.some(c => c.startsWith('CSESSIONID='));
+    if (!hasCSESSIONID) {
+      allCookies.push(`CSESSIONID=${tokenValue}`);
+    }
+
+    this.session = {
+      token: tokenValue,
+      cookies: allCookies,
+      expiresAt: new Date(Date.now() + SESSION_DURATION_MS),
+    };
+
+    return this.session;
+  }
+
+  /**
+   * Find redirect URL in HTML body (meta refresh, JS redirect, or form action)
+   */
+  private findRedirectUrl(body: string): string | undefined {
+    // Meta refresh: <meta http-equiv="refresh" content="0;url=...">
+    const metaMatch = body.match(/content\s*=\s*["'][^"']*url=([^"'\s>]+)/i);
+    if (metaMatch) return metaMatch[1];
+
+    // JS redirect: window.location = "..." or location.href = "..."
+    const jsMatch = body.match(/(?:window\.location|location\.href|location\.replace)\s*[=(]\s*['"]([^'"]+)['"]/i);
+    if (jsMatch) return jsMatch[1];
+
+    // URL in meta tag: <meta ... url=...>
+    const metaUrl = body.match(/url=([^"'\s>]+)/i);
+    if (metaUrl) return metaUrl[1];
+
+    return undefined;
   }
 
   async getSession(): Promise<SiiSession> {
