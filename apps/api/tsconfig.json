@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "lib": ["ES2022", "DOM"],
+    "declaration": false,
+    "declarationMap": false,
+    "paths": {
+      "@wildlama/shared": ["../../packages/shared/src"],
+      "@wildlama/sii-client": ["../../packages/sii-client/src"],
+      "@wildlama/bank-formats": ["../../packages/bank-formats/src"]
+    }
+  },
+  "include": ["src", "../../packages/*/src"]
+}

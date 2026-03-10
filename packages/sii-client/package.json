@@ -1,0 +1,28 @@
+{
+  "name": "@wildlama/sii-client",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "tough-cookie": "^4.1.0",
+    "axios-cookiejar-support": "^4.0.0",
+    "fast-xml-parser": "^4.4.0",
+    "cheerio": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/tough-cookie": "^4.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0"
+  }
+}

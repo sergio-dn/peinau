@@ -1,0 +1,56 @@
+import type { UserRole } from '../types/user.js';
+
+export const ROLES: UserRole[] = ['admin', 'contabilidad', 'aprobador', 'visualizador'];
+
+export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
+  admin: [
+    'invoices:read',
+    'invoices:write',
+    'invoices:approve',
+    'invoices:reject',
+    'invoices:delete',
+    'suppliers:read',
+    'suppliers:write',
+    'suppliers:delete',
+    'workflows:read',
+    'workflows:write',
+    'workflows:delete',
+    'payment-batches:read',
+    'payment-batches:write',
+    'payment-batches:approve',
+    'accounting:read',
+    'accounting:write',
+    'users:read',
+    'users:write',
+    'users:delete',
+    'company:read',
+    'company:write',
+  ],
+  contabilidad: [
+    'invoices:read',
+    'invoices:write',
+    'suppliers:read',
+    'suppliers:write',
+    'payment-batches:read',
+    'payment-batches:write',
+    'accounting:read',
+    'accounting:write',
+    'company:read',
+  ],
+  aprobador: [
+    'invoices:read',
+    'invoices:approve',
+    'invoices:reject',
+    'suppliers:read',
+    'payment-batches:read',
+    'payment-batches:approve',
+    'company:read',
+  ],
+  visualizador: [
+    'invoices:read',
+    'suppliers:read',
+    'payment-batches:read',
+    'accounting:read',
+    'company:read',
+  ],
+};

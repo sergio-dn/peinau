@@ -1,0 +1,26 @@
+{
+  "name": "wildlama-invoices",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Sistema de gesti\u00f3n de facturas SII - Wild Lama",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test",
+    "db:generate": "pnpm --filter @wildlama/api db:generate",
+    "db:migrate": "pnpm --filter @wildlama/api db:migrate",
+    "db:seed": "pnpm --filter @wildlama/api db:seed"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "msgpackr-extract"
+    ]
+  }
+}
