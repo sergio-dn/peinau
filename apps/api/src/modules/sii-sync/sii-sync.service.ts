@@ -40,6 +40,9 @@ export class SiiSyncService {
 
       const allDtes: Awaited<ReturnType<typeof rpetc.getMonthlyDtes>> = [];
 
+      console.log(`[SII Sync] Company RUT: ${company.rut}, SII User: ${company.siiUsername}`);
+      console.log(`[SII Sync] Syncing from ${SYNC_START_YEAR}-${String(SYNC_START_MONTH).padStart(2, '0')} to ${currentYear}-${String(currentMonth).padStart(2, '0')}`);
+
       // Iterate from start date to current month
       let year = SYNC_START_YEAR;
       let month = SYNC_START_MONTH;

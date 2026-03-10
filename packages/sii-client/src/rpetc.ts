@@ -36,24 +36,29 @@ export class RpetcClient {
     const cookieStr = session.cookies.join('; ');
 
     try {
+      const requestBody = {
+        metaData: {
+          conversationId: session.token,
+          namespace: 'cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/getDetalleCompra',
+          page: null,
+          transactionId: '0',
+        },
+        data: {
+          rutEmisor: rutBody,
+          dvEmisor: dv,
+          ptributario: periodo,
+          estadoContab: '',
+          codTipoDoc: 0, // 0 = all document types
+          operacion: 'COMPRA',
+        },
+      };
+
+      console.log(`[RPETC] Querying RCV COMPRA for RUT ${rutBody}-${dv}, period ${periodo}`);
+      console.log(`[RPETC] Request body:`, JSON.stringify(requestBody, null, 2));
+
       const response = await client.post(
         `${RCV_BASE_URL}/getDetalleCompra`,
-        {
-          metaData: {
-            conversationId: session.token,
-            namespace: 'cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/getDetalleCompra',
-            page: null,
-            transactionId: '0',
-          },
-          data: {
-            rutEmisor: rutBody,
-            dvEmisor: dv,
-            ptributario: periodo,
-            estadoContab: query.estado || 'REGISTRO',
-            codTipoDoc: 0, // 0 = all document types
-            operacion: 'COMPRA',
-          },
-        },
+        requestBody,
         {
           headers: {
             'Content-Type': 'application/json;charset=utf-8',
@@ -66,6 +71,9 @@ export class RpetcClient {
 
       const data = response.data;
 
+      console.log(`[RPETC] Response status: ${response.status}`);
+      console.log(`[RPETC] Response data:`, JSON.stringify(data)?.substring(0, 2000));
+
       // Handle error responses
       if (response.status !== 200) {
         console.warn(`[RPETC] Status ${response.status} for period ${periodo}`);
@@ -73,10 +81,13 @@ export class RpetcClient {
       }
 
       if (!data || !data.data) {
+        console.log(`[RPETC] No data in response. Keys: ${data ? Object.keys(data).join(', ') : 'null'}`);
         return [];
       }
 
-      return this.parseRcvResponse(data.data);
+      const entries = this.parseRcvResponse(data.data);
+      console.log(`[RPETC] Parsed ${entries.length} entries for period ${periodo}`);
+      return entries;
     } catch (error) {
       throw new RpetcError(`Failed to query RCV: ${(error as Error).message}`);
     }
