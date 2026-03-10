@@ -14,7 +14,7 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASSWORD: z.string().optional(),
   SLACK_WEBHOOK_URL: z.string().url().optional(),
-  FRONTEND_URL: z.string().url().default('http://localhost:5173'),
+  FRONTEND_URL: z.string().default('http://localhost:5173'),
 });
 
 export const env = envSchema.parse(process.env);
