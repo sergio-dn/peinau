@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { toast } from 'sonner';
-import { Users, Shield, Plus, Settings, Key } from 'lucide-react';
+import { Users, Shield, Plus, Settings, Key, Bug } from 'lucide-react';
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<'users' | 'settings'>('users');
@@ -313,6 +313,22 @@ function SettingsTab() {
       toast.error(err.response?.data?.error || 'Error al conectar con SII'),
   });
 
+  const [debugResult, setDebugResult] = useState<any>(null);
+  const debugSii = useMutation({
+    mutationFn: async () => {
+      const { data } = await apiClient.post('/admin/sii-debug');
+      return data;
+    },
+    onSuccess: (data) => {
+      setDebugResult(data);
+      toast.success(`Debug: ${data.currentMonth?.count || 0} facturas mes actual, ${data.previousMonth?.count || 0} mes anterior`);
+    },
+    onError: (err: any) => {
+      setDebugResult(err.response?.data || { error: err.message });
+      toast.error(err.response?.data?.error || 'Error en debug SII');
+    },
+  });
+
   const saveCompanySettings = useMutation({
     mutationFn: async () => {
       await apiClient.put('/admin/settings', {
@@ -376,7 +392,7 @@ function SettingsTab() {
                 onChange={(e) => setSiiPassword(e.target.value)}
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 variant="outline"
@@ -392,7 +408,21 @@ function SettingsTab() {
               >
                 {saveSiiCredentials.isPending ? 'Guardando...' : 'Guardar Credenciales'}
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => debugSii.mutate()}
+                disabled={debugSii.isPending || !settings?.siiConnected}
+              >
+                <Bug className="w-3 h-3 mr-1" />
+                {debugSii.isPending ? 'Consultando...' : 'Debug RCV'}
+              </Button>
             </div>
+            {debugResult && (
+              <div className="mt-3 p-3 bg-muted rounded text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap">
+                {JSON.stringify(debugResult, null, 2)}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

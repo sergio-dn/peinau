@@ -80,7 +80,7 @@ export class RpetcClient {
           dvEmisor: dv,
           ptributario: periodo,
           estadoContab,
-          codTipoDoc: 0,
+          codTipoDoc: '0',
           operacion: 'COMPRA',
           accionRecaptcha: 'RCV_DDETC',
           tokenRecaptcha: 'c3',

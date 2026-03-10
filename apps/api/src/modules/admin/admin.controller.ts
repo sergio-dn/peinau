@@ -185,7 +185,7 @@ export async function createUser(req: Request, res: Response) {
   });
 }
 
-// POST /api/admin/sii-debug - Debug RCV query
+// POST /api/admin/sii-debug - Debug RCV query with raw responses
 export async function debugSiiQuery(req: Request, res: Response) {
   const company = await db.query.companies.findFirst({
     where: eq(companies.id, req.user!.companyId),
@@ -198,27 +198,114 @@ export async function debugSiiQuery(req: Request, res: Response) {
   try {
     const password = decrypt(company.siiPasswordEncrypted);
     const auth = new SiiAuth({ rut: company.siiUsername, password });
-    await auth.authenticate();
+    const session = await auth.authenticate();
 
-    const rpetc = new RpetcClient(auth);
+    // Clean RUT for API
+    const rutClean = company.rut.replace(/\./g, '');
+    const rutRaw = rutClean.replace(/[^0-9kK]/g, '');
+    const rutBody = rutRaw.slice(0, -1);
+    const dv = rutRaw.slice(-1).toUpperCase();
 
-    // Query current month
     const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
+    const periodo = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const prevMonth = now.getMonth() === 0 ? 12 : now.getMonth();
+    const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
+    const prevPeriodo = `${prevYear}${String(prevMonth).padStart(2, '0')}`;
 
-    const results = await rpetc.getMonthlyDtes(company.rut, year, month);
+    const cookieStr = `TOKEN=${session.token}; CSESSIONID=${session.token}`;
+    const client = auth.getClient();
 
-    // Also try previous month
-    const prevMonth = month === 1 ? 12 : month - 1;
-    const prevYear = month === 1 ? year - 1 : year;
-    const prevResults = await rpetc.getMonthlyDtes(company.rut, prevYear, prevMonth);
+    // Raw query helper
+    const rawQuery = async (periodo: string, estado: string) => {
+      const body = {
+        metaData: {
+          conversationId: session.token,
+          namespace: 'cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/getDetalleCompra',
+          page: null,
+          transactionId: '0',
+        },
+        data: {
+          rutEmisor: rutBody,
+          dvEmisor: dv,
+          ptributario: periodo,
+          estadoContab: estado,
+          codTipoDoc: '0',
+          operacion: 'COMPRA',
+          accionRecaptcha: 'RCV_DDETC',
+          tokenRecaptcha: 'c3',
+        },
+      };
+      const resp = await client.post(
+        'https://www4.sii.cl/consdcvinternetui/services/data/facadeService/getDetalleCompra',
+        body,
+        {
+          headers: {
+            'Content-Type': 'application/json;charset=utf-8',
+            'Accept': 'application/json, text/plain, */*',
+            'Cookie': cookieStr,
+          },
+          validateStatus: () => true,
+        },
+      );
+      return { status: resp.status, data: resp.data };
+    };
+
+    // Also try getResumen to see if there's data at all
+    const rawResumen = async (periodo: string) => {
+      const body = {
+        metaData: {
+          conversationId: session.token,
+          namespace: 'cl.sii.sdi.lob.diii.consdcv.data.api.interfaces.FacadeService/getResumen',
+          page: null,
+          transactionId: '0',
+        },
+        data: {
+          rutEmisor: rutBody,
+          dvEmisor: dv,
+          ptributario: periodo,
+          operacion: 'COMPRA',
+          accionRecaptcha: 'RCV_DDETC',
+          tokenRecaptcha: 'c3',
+        },
+      };
+      const resp = await client.post(
+        'https://www4.sii.cl/consdcvinternetui/services/data/facadeService/getResumen',
+        body,
+        {
+          headers: {
+            'Content-Type': 'application/json;charset=utf-8',
+            'Accept': 'application/json, text/plain, */*',
+            'Cookie': cookieStr,
+          },
+          validateStatus: () => true,
+        },
+      );
+      return { status: resp.status, data: resp.data };
+    };
+
+    // Run queries
+    const [curRegistro, curPendiente, prevRegistro, curResumen, prevResumen] = await Promise.all([
+      rawQuery(periodo, 'REGISTRO'),
+      rawQuery(periodo, 'PENDIENTE'),
+      rawQuery(prevPeriodo, 'REGISTRO'),
+      rawResumen(periodo),
+      rawResumen(prevPeriodo),
+    ]);
 
     res.json({
       companyRut: company.rut,
+      parsedRut: `${rutBody}-${dv}`,
       siiUser: company.siiUsername,
-      currentMonth: { period: `${year}-${String(month).padStart(2, '0')}`, count: results.length, sample: results.slice(0, 3) },
-      previousMonth: { period: `${prevYear}-${String(prevMonth).padStart(2, '0')}`, count: prevResults.length, sample: prevResults.slice(0, 3) },
+      sessionCookies: session.cookies?.length || 0,
+      currentPeriod: periodo,
+      previousPeriod: prevPeriodo,
+      raw: {
+        currentRegistro: curRegistro,
+        currentPendiente: curPendiente,
+        previousRegistro: prevRegistro,
+        currentResumen: curResumen,
+        previousResumen: prevResumen,
+      },
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message, stack: err.stack?.split('\n').slice(0, 5) });
