@@ -101,11 +101,27 @@ export class SiiAuth {
       }
     };
 
-    // Strategy 1: POST with manual redirect following (maxRedirects: 0)
+    // Step 0: GET the login page first to obtain session/load-balancer cookies
+    const LOGIN_PAGE = 'https://zeusr.sii.cl/AUT2000/InicioAutenticacion/IngresoRutClave.html?https://misiir.sii.cl/cgi_misii/siihome.cgi';
+    console.log(`[SII Auth] Attempt ${attempt} - GET login page to obtain initial cookies`);
+    const loginPage = await this.client.get(LOGIN_PAGE, {
+      maxRedirects: 5,
+      validateStatus: () => true,
+    });
+    extractCookies(loginPage.headers);
+    console.log(`[SII Auth] Login page status: ${loginPage.status}, initial cookies: ${allCookies.map(c => c.split('=')[0]).join(', ')}`);
+
+    // Step 1: POST login form WITH the initial cookies
     console.log(`[SII Auth] Attempt ${attempt} - POST to ${SII_AUTH_URL}`);
     const response = await this.client.post(SII_AUTH_URL, formData.toString(), {
       maxRedirects: 0,
       validateStatus: () => true,
+      headers: {
+        'Cookie': allCookies.join('; '),
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Origin': 'https://zeusr.sii.cl',
+        'Referer': LOGIN_PAGE,
+      },
     });
 
     const responseText = typeof response.data === 'string' ? response.data : '';
