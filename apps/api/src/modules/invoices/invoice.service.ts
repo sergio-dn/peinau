@@ -226,11 +226,11 @@ export class InvoiceService {
         fechaRecepcionSii: data.fechaRecepcionSii || new Date(),
         rutEmisor: data.rutEmisor,
         razonSocialEmisor: data.razonSocialEmisor,
-        montoExento: BigInt(data.montoExento),
-        montoNeto: BigInt(data.montoNeto),
-        montoIva: BigInt(data.montoIva),
+        montoExento: Number(data.montoExento),
+        montoNeto: Number(data.montoNeto),
+        montoIva: Number(data.montoIva),
         tasaIva: String(data.tasaIva),
-        montoTotal: BigInt(data.montoTotal),
+        montoTotal: Number(data.montoTotal),
         state: 'recibida',
         dteXml: data.dteXml || null,
       }).returning();
@@ -245,9 +245,9 @@ export class InvoiceService {
             descripcion: line.descripcion || null,
             cantidad: line.cantidad ? String(line.cantidad) : null,
             unidadMedida: line.unidadMedida || null,
-            precioUnitario: line.precioUnitario ? BigInt(line.precioUnitario) : null,
+            precioUnitario: line.precioUnitario ? Number(line.precioUnitario) : null,
             descuentoPct: line.descuentoPct ? String(line.descuentoPct) : '0',
-            montoItem: BigInt(line.montoItem),
+            montoItem: Number(line.montoItem),
             indicadorExencion: line.indicadorExencion || null,
           }))
         );

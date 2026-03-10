@@ -253,12 +253,81 @@ function UsersTab() {
 }
 
 function SettingsTab() {
-  const { data: settings, isLoading } = useQuery({
+  const queryClient = useQueryClient();
+
+  const { data: settings } = useQuery({
     queryKey: ['admin', 'settings'],
     queryFn: async () => {
       const { data } = await apiClient.get('/admin/settings');
       return data;
     },
+  });
+
+  // SII credentials form
+  const [siiRut, setSiiRut] = useState('');
+  const [siiPassword, setSiiPassword] = useState('');
+  const [siiFormReady, setSiiFormReady] = useState(false);
+
+  // Company settings form
+  const [companyName, setCompanyName] = useState('');
+  const [companyRut, setCompanyRut] = useState('');
+  const [companyGiro, setCompanyGiro] = useState('');
+  const [companyDireccion, setCompanyDireccion] = useState('');
+  const [companyFormDirty, setCompanyFormDirty] = useState(false);
+
+  // Populate forms when settings load
+  if (settings && !siiFormReady) {
+    if (settings.siiUsername && siiRut === '') setSiiRut(settings.siiUsername);
+    if (settings.companyName && companyName === '') setCompanyName(settings.companyName);
+    if (settings.rutEmpresa && companyRut === '') setCompanyRut(settings.rutEmpresa);
+    if (settings.giro && companyGiro === '') setCompanyGiro(settings.giro);
+    if (settings.direccion && companyDireccion === '') setCompanyDireccion(settings.direccion);
+    setSiiFormReady(true);
+  }
+
+  const saveSiiCredentials = useMutation({
+    mutationFn: async () => {
+      await apiClient.put('/admin/sii-credentials', {
+        siiUsername: siiRut,
+        siiPassword: siiPassword,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+      toast.success('Credenciales SII guardadas');
+      setSiiPassword('');
+    },
+    onError: () => toast.error('Error al guardar credenciales'),
+  });
+
+  const testSii = useMutation({
+    mutationFn: async () => {
+      const { data } = await apiClient.post('/admin/sii-test', {
+        siiUsername: siiRut || undefined,
+        siiPassword: siiPassword || undefined,
+      });
+      return data;
+    },
+    onSuccess: (data) => toast.success(data.message),
+    onError: (err: any) =>
+      toast.error(err.response?.data?.error || 'Error al conectar con SII'),
+  });
+
+  const saveCompanySettings = useMutation({
+    mutationFn: async () => {
+      await apiClient.put('/admin/settings', {
+        razonSocial: companyName,
+        rut: companyRut,
+        giro: companyGiro,
+        direccion: companyDireccion,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+      toast.success('Datos de empresa actualizados');
+      setCompanyFormDirty(false);
+    },
+    onError: () => toast.error('Error al guardar'),
   });
 
   return (
@@ -277,18 +346,52 @@ function SettingsTab() {
               <Badge variant={settings?.siiConnected ? 'success' : 'warning'}>
                 {settings?.siiConnected ? 'Conectado' : 'No conectado'}
               </Badge>
+              {settings?.lastSync && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Ultima sync: {new Date(settings.lastSync).toLocaleString('es-CL')}
+                  {settings.lastSyncStatus === 'error' && ' (con error)'}
+                </p>
+              )}
             </div>
+
+            <hr />
+
             <div>
-              <p className="text-sm text-muted-foreground">Ultima sincronizacion</p>
-              <p className="font-medium">
-                {settings?.lastSync
-                  ? new Date(settings.lastSync).toLocaleString('es-CL')
-                  : 'Nunca'}
+              <label className="text-sm font-medium block mb-1">RUT SII (usuario)</label>
+              <Input
+                placeholder="12345678-9"
+                value={siiRut}
+                onChange={(e) => setSiiRut(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                RUT del usuario con acceso al portal SII
               </p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">RUT Empresa</p>
-              <p className="font-mono font-medium">{settings?.rutEmpresa || '-'}</p>
+              <label className="text-sm font-medium block mb-1">Clave SII</label>
+              <Input
+                type="password"
+                placeholder="••••••••"
+                value={siiPassword}
+                onChange={(e) => setSiiPassword(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => testSii.mutate()}
+                disabled={testSii.isPending || (!siiRut && !settings?.siiConnected)}
+              >
+                {testSii.isPending ? 'Probando...' : 'Probar Conexion'}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => saveSiiCredentials.mutate()}
+                disabled={saveSiiCredentials.isPending || !siiRut || !siiPassword}
+              >
+                {saveSiiCredentials.isPending ? 'Guardando...' : 'Guardar Credenciales'}
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -304,20 +407,48 @@ function SettingsTab() {
         <CardContent>
           <div className="space-y-4">
             <div>
-              <p className="text-sm text-muted-foreground">Nombre de la Empresa</p>
-              <p className="font-medium">{settings?.companyName || '-'}</p>
+              <label className="text-sm font-medium block mb-1">Nombre de la Empresa</label>
+              <Input
+                value={companyName}
+                onChange={(e) => { setCompanyName(e.target.value); setCompanyFormDirty(true); }}
+                placeholder="Wild Lama SpA"
+              />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Moneda</p>
-              <p className="font-medium">CLP (Peso Chileno)</p>
+              <label className="text-sm font-medium block mb-1">RUT Empresa</label>
+              <Input
+                value={companyRut}
+                onChange={(e) => { setCompanyRut(e.target.value); setCompanyFormDirty(true); }}
+                placeholder="76.123.456-K"
+              />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Zona horaria</p>
-              <p className="font-medium">America/Santiago</p>
+              <label className="text-sm font-medium block mb-1">Giro</label>
+              <Input
+                value={companyGiro}
+                onChange={(e) => { setCompanyGiro(e.target.value); setCompanyFormDirty(true); }}
+                placeholder="Servicios tecnologicos"
+              />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Version</p>
-              <p className="font-mono text-xs">v0.0.1</p>
+              <label className="text-sm font-medium block mb-1">Direccion</label>
+              <Input
+                value={companyDireccion}
+                onChange={(e) => { setCompanyDireccion(e.target.value); setCompanyFormDirty(true); }}
+                placeholder="Santiago, Chile"
+              />
+            </div>
+            <Button
+              size="sm"
+              onClick={() => saveCompanySettings.mutate()}
+              disabled={saveCompanySettings.isPending || !companyFormDirty}
+            >
+              {saveCompanySettings.isPending ? 'Guardando...' : 'Guardar Cambios'}
+            </Button>
+            <div className="pt-2 border-t space-y-1">
+              <p className="text-xs text-muted-foreground">Moneda: CLP (Peso Chileno)</p>
+              <p className="text-xs text-muted-foreground">Zona horaria: America/Santiago</p>
+              <p className="text-xs text-muted-foreground font-mono">v0.0.1</p>
             </div>
           </div>
         </CardContent>

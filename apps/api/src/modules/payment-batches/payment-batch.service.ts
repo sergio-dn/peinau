@@ -50,16 +50,16 @@ export class PaymentBatchService {
     }
 
     return db.transaction(async (tx) => {
-      let totalAmount = BigInt(0);
+      let totalAmount = 0;
 
       const items = [];
       for (const inv of invoiceList) {
         const amount = inv.montoTotal;
-        let retencion = BigInt(0);
+        let retencion = 0;
 
         // Calculate withholding for boletas de honorarios
         if (inv.tipoDte === 71) {
-          retencion = BigInt(Math.round(Number(amount) * HONORARIOS_RETENCION_RATE));
+          retencion = Math.round(Number(amount) * HONORARIOS_RETENCION_RATE);
         }
 
         const amountNet = amount - retencion;

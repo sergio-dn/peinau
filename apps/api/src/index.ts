@@ -13,6 +13,7 @@ import approvalRoutes from './modules/approval/approval.routes.js';
 import accountingRoutes from './modules/accounting/accounting.routes.js';
 import paymentBatchRoutes from './modules/payment-batches/payment-batch.routes.js';
 import reportRoutes from './modules/reports/reports.routes.js';
+import adminRoutes from './modules/admin/admin.routes.js';
 import { startSiiSyncWorker, scheduleSiiSync } from './jobs/queue.js';
 
 const app = express();
@@ -36,6 +37,7 @@ app.use('/api/approvals', approvalRoutes);
 app.use('/api/accounting', accountingRoutes);
 app.use('/api/payment-batches', paymentBatchRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
