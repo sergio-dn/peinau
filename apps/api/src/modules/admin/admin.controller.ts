@@ -111,9 +111,10 @@ export async function testSiiConnection(req: Request, res: Response) {
     await auth.authenticate();
     res.json({ success: true, message: 'Conexion exitosa con el SII' });
   } catch (err: any) {
+    console.error('[SII Test] Connection error:', err.message);
     res.status(400).json({
       success: false,
-      error: 'No se pudo conectar al SII',
+      error: `No se pudo conectar al SII: ${err.message}`,
       detail: err.message,
     });
   }

@@ -58,25 +58,30 @@ export class SiiAuth {
 
       // Check if authentication was successful by looking for error indicators
       const responseText = typeof response.data === 'string' ? response.data : '';
-      if (responseText.includes('Clave Incorrecta') || responseText.includes('error')) {
+      if (responseText.includes('Clave Incorrecta') || responseText.includes('RUT NO VALIDO')) {
         throw new SiiAuthError('Invalid SII credentials');
       }
 
-      // Extract cookies from jar
+      // Extract TOKEN from cookie jar first, then from set-cookie header
       const cookies = await this.cookieJar.getCookies(SII_AUTH_URL);
-      const tokenCookie = cookies.find(c => c.key === 'TOKEN');
+      let tokenValue = cookies.find(c => c.key === 'TOKEN')?.value;
 
-      if (!tokenCookie) {
-        // Try extracting from response headers
+      if (!tokenValue) {
+        // Try extracting from response headers directly
         const setCookies = response.headers['set-cookie'] || [];
         const tokenHeader = setCookies.find((c: string) => c.includes('TOKEN='));
-        if (!tokenHeader) {
-          throw new SiiAuthError('No TOKEN cookie received from SII');
+        if (tokenHeader) {
+          const match = tokenHeader.match(/TOKEN=([^;]+)/);
+          tokenValue = match?.[1];
         }
       }
 
+      if (!tokenValue) {
+        throw new SiiAuthError('No TOKEN cookie received from SII');
+      }
+
       this.session = {
-        token: tokenCookie?.value || '',
+        token: tokenValue,
         cookies: cookies.map(c => `${c.key}=${c.value}`),
         expiresAt: new Date(Date.now() + SESSION_DURATION_MS),
       };
