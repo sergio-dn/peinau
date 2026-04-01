@@ -95,18 +95,17 @@ export async function testSiiConnection(req: Request, res: Response) {
   let rut = siiUsername;
   let password = siiPassword;
 
-  if (!rut || !password) {
-    const company = await db.query.companies.findFirst({
-      where: eq(companies.id, req.user!.companyId),
-    });
-    if (!company?.siiUsername || !company?.siiPasswordEncrypted) {
-      return res.status(400).json({ error: 'No hay credenciales SII configuradas' });
-    }
-    rut = company.siiUsername;
-    password = decrypt(company.siiPasswordEncrypted);
-  }
-
   try {
+    if (!rut || !password) {
+      const company = await db.query.companies.findFirst({
+        where: eq(companies.id, req.user!.companyId),
+      });
+      if (!company?.siiUsername || !company?.siiPasswordEncrypted) {
+        return res.status(400).json({ error: 'No hay credenciales SII configuradas' });
+      }
+      rut = company.siiUsername;
+      password = decrypt(company.siiPasswordEncrypted);
+    }
     await siiApiClient.registerCompany(rut, password);
     res.json({ success: true, message: 'Conexion exitosa con el SII' });
   } catch (err: any) {
