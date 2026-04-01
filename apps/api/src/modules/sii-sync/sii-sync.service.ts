@@ -5,7 +5,7 @@ import { invoiceService } from '../invoices/invoice.service.js';
 import { decrypt } from '../../lib/encryption.js';
 import { siiApiClient, mapApiInvoiceToUpsert } from '../../lib/sii-api-client.js';
 
-const SYNC_START_PERIOD = '202601';
+const SYNC_START_PERIOD = '202501';
 
 export class SiiSyncService {
   async syncCompany(companyId: string) {
