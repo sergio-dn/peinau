@@ -7,7 +7,6 @@
     "declarationMap": false,
     "paths": {
       "@wildlama/shared": ["../../packages/shared/src"],
-      "@wildlama/sii-client": ["../../packages/sii-client/src"],
       "@wildlama/bank-formats": ["../../packages/bank-formats/src"]
     }
   },

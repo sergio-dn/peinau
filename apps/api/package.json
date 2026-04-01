@@ -14,7 +14,6 @@
   },
   "dependencies": {
     "@wildlama/shared": "workspace:*",
-    "@wildlama/sii-client": "workspace:*",
     "@wildlama/bank-formats": "workspace:*",
     "express": "^4.21.0",
     "cors": "^2.8.5",

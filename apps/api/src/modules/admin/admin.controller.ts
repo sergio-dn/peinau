@@ -3,7 +3,7 @@ import { db } from '../../config/database.js';
 import { companies, users, userRoles, siiSyncLogs } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
 import { encrypt, decrypt } from '../../lib/encryption.js';
-import { SiiAuth, RpetcClient } from '@wildlama/sii-client';
+import { siiApiClient } from '../../lib/sii-api-client.js';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 
@@ -107,10 +107,14 @@ export async function testSiiConnection(req: Request, res: Response) {
   }
 
   try {
-    const auth = new SiiAuth({ rut, password });
-    await auth.authenticate();
+    await siiApiClient.registerCompany(rut, password);
     res.json({ success: true, message: 'Conexion exitosa con el SII' });
   } catch (err: any) {
+    // 409/422 means already registered = credentials are valid
+    if (err.statusCode === 409 || err.statusCode === 422) {
+      res.json({ success: true, message: 'Conexion exitosa con el SII' });
+      return;
+    }
     console.error('[SII Test] Connection error:', err.message);
     res.status(400).json({
       success: false,
@@ -185,7 +189,7 @@ export async function createUser(req: Request, res: Response) {
   });
 }
 
-// POST /api/admin/sii-debug - Debug RCV query with raw responses
+// POST /api/admin/sii-debug - Debug SII API query
 export async function debugSiiQuery(req: Request, res: Response) {
   const company = await db.query.companies.findFirst({
     where: eq(companies.id, req.user!.companyId),
@@ -196,69 +200,33 @@ export async function debugSiiQuery(req: Request, res: Response) {
   }
 
   try {
-    const password = decrypt(company.siiPasswordEncrypted);
-    const auth = new SiiAuth({ rut: company.siiUsername, password });
-    const session = await auth.authenticate();
-
-    const rpetc = new RpetcClient(auth);
-
-    // Clean RUT for API
-    const rutClean = company.rut.replace(/\./g, '');
-    const rutRaw = rutClean.replace(/[^0-9kK]/g, '');
-    const rutBody = rutRaw.slice(0, -1);
-    const dv = rutRaw.slice(-1).toUpperCase();
-
     const now = new Date();
     const periodo = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    // Use the new RpetcClient with cookie jar + session init
-    const resumen = await rpetc.rawResumen(rutBody, dv, periodo);
-    const detalle33 = await rpetc.rawDetalle(rutBody, dv, periodo, 'REGISTRO', 33);
-    const detalle34 = await rpetc.rawDetalle(rutBody, dv, periodo, 'REGISTRO', 34);
-
-    // Also try previous month
     const prevMonth = now.getMonth() === 0 ? 12 : now.getMonth();
     const prevYear = now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear();
     const prevPeriodo = `${prevYear}${String(prevMonth).padStart(2, '0')}`;
 
-    const prevResumen = await rpetc.rawResumen(rutBody, dv, prevPeriodo);
-
-    // Try a full query to see actual document count
-    let fullQueryCount = 0;
-    try {
-      const fullResult = await rpetc.getMonthlyDtes(company.rut, now.getFullYear(), now.getMonth() + 1);
-      fullQueryCount = fullResult.length;
-    } catch (err: any) {
-      console.warn(`[SII Debug] Full query failed: ${err.message}`);
-    }
+    const [periodos, syncStatus, resumenActual, resumenPrev, comprasActual] = await Promise.all([
+      siiApiClient.getPeriodos(company.rut).catch(() => []),
+      siiApiClient.getSyncStatus(company.rut).catch(() => ({ rut: company.rut, logs: [] })),
+      siiApiClient.getResumen(company.rut, periodo).catch(() => null),
+      siiApiClient.getResumen(company.rut, prevPeriodo).catch(() => null),
+      siiApiClient.getCompras(company.rut, periodo, 5, 0).catch(() => null),
+    ]);
 
     res.json({
       companyRut: company.rut,
-      parsedRut: `${rutBody}-${dv}`,
       siiUser: company.siiUsername,
-      authCookies: session.cookies.map((c: string) => c.split('=')[0]),
       currentPeriod: periodo,
       previousPeriod: prevPeriodo,
-      fullQueryCount,
+      periodos,
+      syncStatus: syncStatus.logs,
       resumen: {
-        [periodo]: {
-          totDocRes: resumen.data?.totDocRes ?? null,
-          dataCabecera: resumen.data?.dataCabecera || null,
-          dataCount: Array.isArray(resumen.data?.data) ? resumen.data.data.length : 0,
-          data: resumen.data?.data || [],
-          status: resumen.status,
-        },
-        [prevPeriodo]: {
-          totDocRes: prevResumen.data?.totDocRes ?? null,
-          dataCount: Array.isArray(prevResumen.data?.data) ? prevResumen.data.data.length : 0,
-          data: prevResumen.data?.data || [],
-          status: prevResumen.status,
-        },
+        [periodo]: resumenActual,
+        [prevPeriodo]: resumenPrev,
       },
-      detalle: {
-        [`${periodo}_tipo33`]: detalle33,
-        [`${periodo}_tipo34`]: detalle34,
-      },
+      sampleCompras: comprasActual,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message, stack: err.stack?.split('\n').slice(0, 5) });

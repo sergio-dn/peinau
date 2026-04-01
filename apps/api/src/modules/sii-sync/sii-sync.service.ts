@@ -1,9 +1,11 @@
-import { SiiAuth, RpetcClient, DteDownloader, DteParser } from '@wildlama/sii-client';
 import { db } from '../../config/database.js';
 import { companies, siiSyncLogs } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { invoiceService } from '../invoices/invoice.service.js';
 import { decrypt } from '../../lib/encryption.js';
+import { siiApiClient, mapApiInvoiceToUpsert } from '../../lib/sii-api-client.js';
+
+const SYNC_START_PERIOD = '202601';
 
 export class SiiSyncService {
   async syncCompany(companyId: string) {
@@ -23,89 +25,63 @@ export class SiiSyncService {
 
     try {
       const password = decrypt(company.siiPasswordEncrypted);
-      const auth = new SiiAuth({ rut: company.siiUsername, password });
-      await auth.authenticate();
-
-      const rpetc = new RpetcClient(auth);
-      const downloader = new DteDownloader(auth);
-      const parser = new DteParser();
-
-      // Only sync from 2026-01 onwards to avoid overwhelming the DB
-      const SYNC_START_YEAR = 2026;
-      const SYNC_START_MONTH = 1; // January
-
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1; // 1-based
-
-      const allDtes: Awaited<ReturnType<typeof rpetc.getMonthlyDtes>> = [];
 
       console.log(`[SII Sync] Company RUT: ${company.rut}, SII User: ${company.siiUsername}`);
-      console.log(`[SII Sync] Syncing from ${SYNC_START_YEAR}-${String(SYNC_START_MONTH).padStart(2, '0')} to ${currentYear}-${String(currentMonth).padStart(2, '0')}`);
 
-      // Iterate from start date to current month
-      let year = SYNC_START_YEAR;
-      let month = SYNC_START_MONTH;
-      while (year < currentYear || (year === currentYear && month <= currentMonth)) {
-        try {
-          const monthDtes = await rpetc.getMonthlyDtes(company.rut, year, month);
-          allDtes.push(...monthDtes);
-        } catch (err) {
-          console.warn(`[SII Sync] Error fetching ${year}-${String(month).padStart(2, '0')}:`, (err as Error).message);
+      // 1. Register company on external API (idempotent)
+      try {
+        await siiApiClient.registerCompany(company.rut, password, company.razonSocial || undefined);
+        console.log(`[SII Sync] Company registered on external API`);
+      } catch (err: any) {
+        // 409 or similar = already registered, that's fine
+        if (err.statusCode !== 409 && err.statusCode !== 422) {
+          throw err;
         }
-        month++;
-        if (month > 12) {
-          month = 1;
-          year++;
-        }
+        console.log(`[SII Sync] Company already registered on external API`);
       }
+
+      // 2. Build period range
+      const now = new Date();
+      const hasta = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      // 3. Trigger sync on external API
+      console.log(`[SII Sync] Triggering external sync from ${SYNC_START_PERIOD} to ${hasta}`);
+      await siiApiClient.triggerSync(company.rut, password, SYNC_START_PERIOD, hasta);
+
+      // 4. Wait for sync to complete
+      console.log(`[SII Sync] Waiting for external sync to complete...`);
+      const syncStatus = await siiApiClient.waitForSync(company.rut);
+      console.log(`[SII Sync] External sync finished. Logs: ${syncStatus.logs.length}`);
+
+      // 5. Get available periods
+      const periodos = await siiApiClient.getPeriodos(company.rut);
+      const relevantPeriodos = periodos.filter(p => p.codigo >= SYNC_START_PERIOD);
+      console.log(`[SII Sync] Found ${relevantPeriodos.length} periods from ${SYNC_START_PERIOD}`);
+
+      // 6. Fetch and upsert compras from each period
+      let totalFound = 0;
       let newCount = 0;
 
-      for (const dte of allDtes) {
+      for (const periodo of relevantPeriodos) {
         try {
-          // Try to download full XML for line items
-          let dteDoc = null;
-          try {
-            const xml = await downloader.downloadDteXml({
-              rutEmisor: dte.rutEmisor,
-              tipoDte: dte.tipoDte,
-              folio: dte.folio,
-              rutReceptor: company.rut,
-            });
-            dteDoc = parser.parse(xml);
-          } catch {
-            // XML download may fail for some DTEs, continue with RPETC data
+          const compras = await siiApiClient.getAllCompras(company.rut, periodo.codigo);
+          totalFound += compras.length;
+
+          for (const item of compras) {
+            try {
+              const data = mapApiInvoiceToUpsert(item);
+              const result = await invoiceService.upsertFromSii(companyId, data);
+              if (result.isNew) newCount++;
+            } catch (err) {
+              console.error(`[SII Sync] Error upserting invoice from period ${periodo.codigo}:`, err);
+            }
           }
 
-          const result = await invoiceService.upsertFromSii(companyId, {
-            tipoDte: dte.tipoDte,
-            folio: dte.folio,
-            fechaEmision: dte.fechaEmision,
-            fechaRecepcionSii: dte.fechaRecepcion ? new Date(dte.fechaRecepcion) : undefined,
-            rutEmisor: dte.rutEmisor,
-            razonSocialEmisor: dte.razonSocialEmisor,
-            montoExento: dte.montoExento,
-            montoNeto: dte.montoNeto,
-            montoIva: dte.montoIva,
-            tasaIva: 19,
-            montoTotal: dte.montoTotal,
-            dteXml: dteDoc?.xmlRaw,
-            lines: dteDoc?.detalle?.map((d: any) => ({
-              lineNumber: d.nroLinDet,
-              nombreItem: d.nombreItem,
-              descripcion: d.descripcion,
-              cantidad: d.cantidad,
-              unidadMedida: d.unidadMedida,
-              precioUnitario: d.precioUnitario,
-              descuentoPct: d.descuentoPct,
-              montoItem: d.montoItem,
-              indicadorExencion: d.indicadorExencion,
-            })),
-          });
-
-          if (result.isNew) newCount++;
+          if (compras.length > 0) {
+            console.log(`[SII Sync] Period ${periodo.codigo}: ${compras.length} documents`);
+          }
         } catch (err) {
-          console.error(`Error processing DTE ${dte.tipoDte}-${dte.folio}:`, err);
+          console.warn(`[SII Sync] Error fetching compras for ${periodo.codigo}:`, (err as Error).message);
         }
       }
 
@@ -113,12 +89,12 @@ export class SiiSyncService {
         .set({
           finishedAt: new Date(),
           status: 'success',
-          invoicesFound: allDtes.length,
+          invoicesFound: totalFound,
           invoicesNew: newCount,
         })
         .where(eq(siiSyncLogs.id, syncLog.id));
 
-      return { invoicesFound: allDtes.length, invoicesNew: newCount };
+      return { invoicesFound: totalFound, invoicesNew: newCount };
     } catch (error) {
       await db.update(siiSyncLogs)
         .set({

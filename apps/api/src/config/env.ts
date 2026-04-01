@@ -15,6 +15,8 @@ const envSchema = z.object({
   SMTP_PASSWORD: z.string().optional(),
   SLACK_WEBHOOK_URL: z.string().url().optional(),
   FRONTEND_URL: z.string().default('http://localhost:5173'),
+  SII_API_URL: z.string().url().default('https://sii-api-916356778383.southamerica-east1.run.app'),
+  SII_API_KEY: z.string().min(1),
 });
 
 export const env = envSchema.parse(process.env);

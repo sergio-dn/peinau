@@ -16,9 +16,6 @@ importers:
       '@wildlama/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@wildlama/sii-client':
-        specifier: workspace:*
-        version: link:../../packages/sii-client
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
