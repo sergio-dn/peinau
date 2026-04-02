@@ -38,3 +38,17 @@ export function useRejectApproval() {
     },
   });
 }
+
+export function useReturnApproval() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ invoiceId, reason }: { invoiceId: string; reason: string }) => {
+      const { data } = await apiClient.post(`/approvals/${invoiceId}/return`, { reason });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+    },
+  });
+}

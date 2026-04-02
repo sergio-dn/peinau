@@ -339,6 +339,44 @@ export const siiSyncLogs = pgTable('sii_sync_logs', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// ─── Invoice Attachments ──────────────────────────────────────────────────────
+
+export const invoiceAttachments = pgTable('invoice_attachments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  invoiceId: uuid('invoice_id').notNull().references(() => invoices.id, { onDelete: 'cascade' }),
+  fileName: varchar('file_name', { length: 255 }).notNull(),
+  fileType: varchar('file_type', { length: 100 }).notNull(),
+  fileSize: integer('file_size').notNull(),
+  storagePath: text('storage_path').notNull(),
+  uploadedBy: uuid('uploaded_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// ─── Invoice Tags ─────────────────────────────────────────────────────────────
+
+export const invoiceTags = pgTable('invoice_tags', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  invoiceId: uuid('invoice_id').notNull().references(() => invoices.id, { onDelete: 'cascade' }),
+  tag: varchar('tag', { length: 100 }).notNull(),
+  createdBy: uuid('created_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  uniqueInvoiceTag: uniqueIndex('uq_invoice_tags_invoice_tag').on(table.invoiceId, table.tag),
+}));
+
+// ─── Invoice Assignments ──────────────────────────────────────────────────────
+
+export const invoiceAssignments = pgTable('invoice_assignments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  invoiceId: uuid('invoice_id').notNull().references(() => invoices.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id),
+  assignedBy: uuid('assigned_by').notNull().references(() => users.id),
+  role: varchar('role', { length: 50 }).notNull(), // 'reviewer' | 'approver' | 'accountant'
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  uniqueInvoiceUserRole: uniqueIndex('uq_invoice_assignments_invoice_user_role').on(table.invoiceId, table.userId, table.role),
+}));
+
 // ─── Relations ─────────────────────────────────────────────────────────────────
 
 export const companiesRelations = relations(companies, ({ many }) => ({
@@ -402,6 +440,9 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   lines: many(invoiceLines),
   stateHistory: many(invoiceStateHistory),
   approvalSteps: many(approvalSteps),
+  attachments: many(invoiceAttachments),
+  tags: many(invoiceTags),
+  assignments: many(invoiceAssignments),
 }));
 
 export const invoiceLinesRelations = relations(invoiceLines, ({ one }) => ({
@@ -512,4 +553,20 @@ export const siiSyncLogsRelations = relations(siiSyncLogs, ({ one }) => ({
     fields: [siiSyncLogs.companyId],
     references: [companies.id],
   }),
+}));
+
+export const invoiceAttachmentsRelations = relations(invoiceAttachments, ({ one }) => ({
+  invoice: one(invoices, { fields: [invoiceAttachments.invoiceId], references: [invoices.id] }),
+  uploadedByUser: one(users, { fields: [invoiceAttachments.uploadedBy], references: [users.id] }),
+}));
+
+export const invoiceTagsRelations = relations(invoiceTags, ({ one }) => ({
+  invoice: one(invoices, { fields: [invoiceTags.invoiceId], references: [invoices.id] }),
+  createdByUser: one(users, { fields: [invoiceTags.createdBy], references: [users.id] }),
+}));
+
+export const invoiceAssignmentsRelations = relations(invoiceAssignments, ({ one }) => ({
+  invoice: one(invoices, { fields: [invoiceAssignments.invoiceId], references: [invoices.id] }),
+  user: one(users, { fields: [invoiceAssignments.userId], references: [users.id] }),
+  assignedByUser: one(users, { fields: [invoiceAssignments.assignedBy], references: [users.id] }),
 }));

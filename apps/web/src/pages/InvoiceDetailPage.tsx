@@ -1,71 +1,46 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useInvoice, useInvoiceHistory, useUpdateLineAccounting, useContabilizar, useRejectInvoice } from '@/api/invoices';
+import { useInvoice, useInvoiceHistory, useInvoiceAssignments } from '@/api/invoices';
 import { useAccounts, useCostCenters } from '@/api/accounting';
-import { InvoiceStateBadge } from '@/components/invoices/InvoiceStateBadge';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
+import { InvoiceHeader } from '@/components/invoices/InvoiceHeader';
+import { InvoiceLineTable } from '@/components/invoices/InvoiceLineTable';
+import { InvoiceActions } from '@/components/invoices/InvoiceActions';
+import { RejectDialog } from '@/components/invoices/RejectDialog';
+import { AssignDialog } from '@/components/invoices/AssignDialog';
+import { InvoiceNotesSection } from '@/components/invoices/InvoiceNotesSection';
+import { InvoiceTagsSection } from '@/components/invoices/InvoiceTagsSection';
+import { AttachmentSection } from '@/components/invoices/AttachmentSection';
+import { InvoiceHistoryTimeline } from '@/components/invoices/InvoiceHistoryTimeline';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Avatar, AvatarFallback } from '@/components/ui/Avatar';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { formatCLP } from '@wildlama/shared';
-import { toast } from 'sonner';
-import { ArrowLeft, Clock, CheckCircle, XCircle, Calculator } from 'lucide-react';
+import { UserPlus } from 'lucide-react';
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [rejectReason, setRejectReason] = useState('');
-  const [showRejectForm, setShowRejectForm] = useState(false);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
 
   const { data: invoice, isLoading } = useInvoice(id!);
   const { data: history } = useInvoiceHistory(id!);
   const { data: accounts } = useAccounts();
   const { data: costCenters } = useCostCenters();
-  const updateLineAccounting = useUpdateLineAccounting();
-  const contabilizar = useContabilizar();
-  const rejectInvoice = useRejectInvoice();
-
-  const handleAccountChange = (lineId: string, accountId: string) => {
-    updateLineAccounting.mutate(
-      { invoiceId: id!, lineId, accountId: accountId || null, costCenterId: null },
-      { onSuccess: () => toast.success('Cuenta actualizada') }
-    );
-  };
-
-  const handleCostCenterChange = (lineId: string, costCenterId: string) => {
-    updateLineAccounting.mutate(
-      { invoiceId: id!, lineId, accountId: null, costCenterId: costCenterId || null },
-      { onSuccess: () => toast.success('Centro de costo actualizado') }
-    );
-  };
-
-  const handleContabilizar = () => {
-    contabilizar.mutate(id!, {
-      onSuccess: () => toast.success('Factura contabilizada'),
-      onError: () => toast.error('Error al contabilizar'),
-    });
-  };
-
-  const handleReject = () => {
-    if (!rejectReason.trim()) {
-      toast.error('Debe ingresar un motivo de rechazo');
-      return;
-    }
-    rejectInvoice.mutate(
-      { invoiceId: id!, reason: rejectReason },
-      {
-        onSuccess: () => {
-          toast.success('Factura rechazada');
-          setShowRejectForm(false);
-          setRejectReason('');
-        },
-        onError: () => toast.error('Error al rechazar'),
-      }
-    );
-  };
+  const { data: assignments } = useInvoiceAssignments(id!);
 
   if (isLoading) {
-    return <div className="text-center py-8 text-muted-foreground">Cargando factura...</div>;
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-12 w-96" />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Skeleton className="h-96 lg:col-span-2" />
+          <Skeleton className="h-96" />
+        </div>
+      </div>
+    );
   }
 
   if (!invoice) {
@@ -75,203 +50,190 @@ export default function InvoiceDetailPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/invoices')}>
-          <ArrowLeft className="w-5 h-5" />
-        </Button>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">
-              Factura {invoice.tipoDte} #{invoice.folio}
-            </h1>
-            <InvoiceStateBadge state={invoice.state} />
-          </div>
-          <p className="text-muted-foreground mt-1">
-            {invoice.razonSocialEmisor} - {invoice.rutEmisor}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {invoice.state === 'aprobada' && (
-            <Button onClick={handleContabilizar} disabled={contabilizar.isPending}>
-              <Calculator className="w-4 h-4 mr-2" />
-              Contabilizar
-            </Button>
-          )}
-          {['recibida', 'pendiente'].includes(invoice.state) && (
-            <Button
-              variant="destructive"
-              onClick={() => setShowRejectForm(!showRejectForm)}
-            >
-              <XCircle className="w-4 h-4 mr-2" />
-              Rechazar
-            </Button>
-          )}
-        </div>
-      </div>
+      <InvoiceHeader invoice={invoice} onBack={() => navigate('/invoices')} />
 
-      {/* Reject form */}
-      {showRejectForm && (
-        <Card className="border-destructive">
-          <CardContent className="pt-6">
-            <div className="flex gap-3">
-              <Input
-                placeholder="Motivo de rechazo..."
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                className="flex-1"
-              />
-              <Button variant="destructive" onClick={handleReject} disabled={rejectInvoice.isPending}>
-                Confirmar Rechazo
-              </Button>
-              <Button variant="outline" onClick={() => setShowRejectForm(false)}>
-                Cancelar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
+      {/* Main content: 2/3 + 1/3 grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Invoice details */}
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-lg">Detalle de la Factura</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div>
-                <p className="text-sm text-muted-foreground">Fecha Emision</p>
-                <p className="font-medium">{invoice.fechaEmision}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Fecha Recepcion SII</p>
-                <p className="font-medium">{invoice.fechaRecepcionSii || '-'}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Monto Neto</p>
-                <p className="font-medium">{formatCLP(Number(invoice.montoNeto))}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">IVA</p>
-                <p className="font-medium">{formatCLP(Number(invoice.montoIva))}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Monto Exento</p>
-                <p className="font-medium">{formatCLP(Number(invoice.montoExento || 0))}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Monto Total</p>
-                <p className="text-xl font-bold">{formatCLP(Number(invoice.montoTotal))}</p>
-              </div>
-            </div>
+        {/* Left: Tabs with main content */}
+        <div className="lg:col-span-2">
+          <Tabs defaultValue="detalle">
+            <TabsList>
+              <TabsTrigger value="detalle">Detalle</TabsTrigger>
+              <TabsTrigger value="documentos">Documentos</TabsTrigger>
+              <TabsTrigger value="notas">Notas y Tags</TabsTrigger>
+              <TabsTrigger value="historial">Historial</TabsTrigger>
+            </TabsList>
 
-            {/* Invoice lines */}
-            <h4 className="font-semibold mb-3">Lineas de Detalle</h4>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2 px-2 font-medium">Descripcion</th>
-                    <th className="text-right py-2 px-2 font-medium">Cant.</th>
-                    <th className="text-right py-2 px-2 font-medium">Precio</th>
-                    <th className="text-right py-2 px-2 font-medium">Total</th>
-                    <th className="text-left py-2 px-2 font-medium">Cuenta</th>
-                    <th className="text-left py-2 px-2 font-medium">Centro Costo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoice.lines?.map((line: any) => (
-                    <tr key={line.id} className="border-b">
-                      <td className="py-2 px-2">{line.descripcion}</td>
-                      <td className="py-2 px-2 text-right">{line.cantidad}</td>
-                      <td className="py-2 px-2 text-right">{formatCLP(Number(line.precioUnitario))}</td>
-                      <td className="py-2 px-2 text-right font-medium">{formatCLP(Number(line.montoTotal))}</td>
-                      <td className="py-2 px-2">
-                        <select
-                          value={line.accountId || ''}
-                          onChange={(e) => handleAccountChange(line.id, e.target.value)}
-                          className="h-8 rounded border border-input bg-background px-2 text-xs w-full max-w-[160px]"
-                        >
-                          <option value="">Sin cuenta</option>
-                          {accounts?.map((acc: any) => (
-                            <option key={acc.id} value={acc.id}>
-                              {acc.code} - {acc.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="py-2 px-2">
-                        <select
-                          value={line.costCenterId || ''}
-                          onChange={(e) => handleCostCenterChange(line.id, e.target.value)}
-                          className="h-8 rounded border border-input bg-background px-2 text-xs w-full max-w-[160px]"
-                        >
-                          <option value="">Sin CC</option>
-                          {costCenters?.map((cc: any) => (
-                            <option key={cc.id} value={cc.id}>
-                              {cc.code} - {cc.name}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* History sidebar */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Historial</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {history && history.length > 0 ? (
-              <div className="space-y-4">
-                {history.map((entry: any, idx: number) => (
-                  <div key={idx} className="flex gap-3">
-                    <div className="flex flex-col items-center">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                        entry.action === 'rechazada' ? 'bg-red-100' :
-                        entry.action === 'aprobada' ? 'bg-green-100' :
-                        'bg-blue-100'
-                      }`}>
-                        {entry.action === 'rechazada' ? (
-                          <XCircle className="w-4 h-4 text-red-600" />
-                        ) : entry.action === 'aprobada' ? (
-                          <CheckCircle className="w-4 h-4 text-green-600" />
-                        ) : (
-                          <Clock className="w-4 h-4 text-blue-600" />
-                        )}
-                      </div>
-                      {idx < history.length - 1 && (
-                        <div className="w-px h-full bg-border mt-1" />
-                      )}
+            <TabsContent value="detalle">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Detalle de la Factura</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {/* Summary grid */}
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Fecha Emision</p>
+                      <p className="font-medium">{invoice.fechaEmision}</p>
                     </div>
-                    <div className="flex-1 pb-4">
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">
-                          {entry.fromState} &rarr; {entry.toState}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {entry.userName} - {new Date(entry.createdAt).toLocaleString('es-CL')}
-                      </p>
-                      {entry.comment && (
-                        <p className="text-sm mt-1">{entry.comment}</p>
-                      )}
+                    <div>
+                      <p className="text-sm text-muted-foreground">Fecha Recepcion SII</p>
+                      <p className="font-medium">{invoice.fechaRecepcionSii || '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Monto Neto</p>
+                      <p className="font-medium">{formatCLP(Number(invoice.montoNeto))}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">IVA</p>
+                      <p className="font-medium">{formatCLP(Number(invoice.montoIva))}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Monto Exento</p>
+                      <p className="font-medium">{formatCLP(Number(invoice.montoExento || 0))}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Monto Total</p>
+                      <p className="text-xl font-bold">{formatCLP(Number(invoice.montoTotal))}</p>
                     </div>
                   </div>
-                ))}
+
+                  {/* Line items table */}
+                  <h4 className="font-semibold mb-3">Lineas de Detalle</h4>
+                  <InvoiceLineTable
+                    lines={invoice.lines || []}
+                    accounts={accounts || []}
+                    costCenters={costCenters || []}
+                    invoiceId={id!}
+                    disabled={!['recibida', 'pendiente', 'aprobada'].includes(invoice.state)}
+                  />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="documentos">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Documentos Adjuntos</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <AttachmentSection invoiceId={id!} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="notas">
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Notas</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <InvoiceNotesSection invoiceId={id!} initialNotes={invoice.notes} />
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Tags</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <InvoiceTagsSection invoiceId={id!} />
+                  </CardContent>
+                </Card>
               </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">Sin historial</p>
-            )}
-          </CardContent>
-        </Card>
+            </TabsContent>
+
+            <TabsContent value="historial">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Historial</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <InvoiceHistoryTimeline history={history || []} />
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
+        </div>
+
+        {/* Right sidebar */}
+        <div className="space-y-6">
+          {/* Actions card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Acciones</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <InvoiceActions invoice={invoice} onReject={() => setRejectOpen(true)} />
+            </CardContent>
+          </Card>
+
+          {/* Assignments card */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-lg">Asignados</CardTitle>
+                <Button variant="outline" size="sm" onClick={() => setAssignOpen(true)}>
+                  <UserPlus className="w-4 h-4 mr-1" />
+                  Asignar
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {assignments && assignments.length > 0 ? (
+                <div className="space-y-3">
+                  {assignments.map((a: any) => (
+                    <div key={a.id} className="flex items-center gap-3">
+                      <Avatar className="h-8 w-8">
+                        <AvatarFallback className="text-xs">
+                          {a.userName?.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{a.userName}</p>
+                        <p className="text-xs text-muted-foreground capitalize">{a.role}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">Sin asignaciones</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Summary card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Resumen</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Neto</span>
+                  <span>{formatCLP(Number(invoice.montoNeto))}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">IVA</span>
+                  <span>{formatCLP(Number(invoice.montoIva))}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Exento</span>
+                  <span>{formatCLP(Number(invoice.montoExento || 0))}</span>
+                </div>
+                <div className="border-t pt-2 flex justify-between font-bold">
+                  <span>Total</span>
+                  <span>{formatCLP(Number(invoice.montoTotal))}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
+
+      {/* Dialogs */}
+      <RejectDialog open={rejectOpen} onOpenChange={setRejectOpen} invoiceId={id!} />
+      <AssignDialog open={assignOpen} onOpenChange={setAssignOpen} invoiceId={id!} />
     </div>
   );
 }

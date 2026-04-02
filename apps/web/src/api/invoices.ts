@@ -85,3 +85,100 @@ export function useRejectInvoice() {
     },
   });
 }
+
+export function useUpdateInvoiceNotes() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ invoiceId, notes }: { invoiceId: string; notes: string }) => {
+      const { data } = await apiClient.put(`/invoices/${invoiceId}/notes`, { notes });
+      return data;
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices', vars.invoiceId] });
+    },
+  });
+}
+
+export function useInvoiceTags(invoiceId: string) {
+  return useQuery({
+    queryKey: ['invoices', invoiceId, 'tags'],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/invoices/${invoiceId}/tags`);
+      return data;
+    },
+    enabled: !!invoiceId,
+  });
+}
+
+export function useAddInvoiceTag() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ invoiceId, tag }: { invoiceId: string; tag: string }) => {
+      const { data } = await apiClient.post(`/invoices/${invoiceId}/tags`, { tag });
+      return data;
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices', vars.invoiceId, 'tags'] });
+    },
+  });
+}
+
+export function useRemoveInvoiceTag() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ invoiceId, tagId }: { invoiceId: string; tagId: string }) => {
+      const { data } = await apiClient.delete(`/invoices/${invoiceId}/tags/${tagId}`);
+      return data;
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices', vars.invoiceId, 'tags'] });
+    },
+  });
+}
+
+export function useInvoiceAssignments(invoiceId: string) {
+  return useQuery({
+    queryKey: ['invoices', invoiceId, 'assignments'],
+    queryFn: async () => {
+      const { data } = await apiClient.get(`/invoices/${invoiceId}/assignments`);
+      return data;
+    },
+    enabled: !!invoiceId,
+  });
+}
+
+export function useAssignInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ invoiceId, userId, role }: { invoiceId: string; userId: string; role: string }) => {
+      const { data } = await apiClient.post(`/invoices/${invoiceId}/assignments`, { userId, role });
+      return data;
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices', vars.invoiceId, 'assignments'] });
+    },
+  });
+}
+
+export function useRemoveAssignment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ invoiceId, assignmentId }: { invoiceId: string; assignmentId: string }) => {
+      const { data } = await apiClient.delete(`/invoices/${invoiceId}/assignments/${assignmentId}`);
+      return data;
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['invoices', vars.invoiceId, 'assignments'] });
+    },
+  });
+}
+
+export function useCompanyUsers() {
+  return useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/users');
+      return data;
+    },
+  });
+}

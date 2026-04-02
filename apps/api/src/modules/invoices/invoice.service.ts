@@ -1,6 +1,6 @@
 import { eq, and, desc, sql, between, ilike } from 'drizzle-orm';
 import { db } from '../../config/database.js';
-import { invoices, invoiceLines, invoiceStateHistory, suppliers } from '../../db/schema.js';
+import { invoices, invoiceLines, invoiceStateHistory, suppliers, invoiceTags, invoiceAssignments, users, userRoles } from '../../db/schema.js';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   recibida: ['pendiente', 'rechazada'],
@@ -266,6 +266,72 @@ export class InvoiceService {
     });
 
     return { invoice: result, isNew: true };
+  }
+
+  async updateNotes(invoiceId: string, notes: string) {
+    const [updated] = await db.update(invoices)
+      .set({ notes, updatedAt: new Date() })
+      .where(eq(invoices.id, invoiceId))
+      .returning();
+    if (!updated) throw Object.assign(new Error('Invoice not found'), { status: 404 });
+    return updated;
+  }
+
+  async getTags(invoiceId: string) {
+    return db.select().from(invoiceTags).where(eq(invoiceTags.invoiceId, invoiceId));
+  }
+
+  async addTag(invoiceId: string, tag: string, userId: string) {
+    const [created] = await db.insert(invoiceTags).values({
+      invoiceId, tag, createdBy: userId,
+    }).returning();
+    return created;
+  }
+
+  async removeTag(tagId: string) {
+    await db.delete(invoiceTags).where(eq(invoiceTags.id, tagId));
+  }
+
+  async getAssignments(invoiceId: string) {
+    return db.select({
+      id: invoiceAssignments.id,
+      invoiceId: invoiceAssignments.invoiceId,
+      userId: invoiceAssignments.userId,
+      role: invoiceAssignments.role,
+      createdAt: invoiceAssignments.createdAt,
+      userName: users.name,
+      userEmail: users.email,
+    })
+    .from(invoiceAssignments)
+    .innerJoin(users, eq(invoiceAssignments.userId, users.id))
+    .where(eq(invoiceAssignments.invoiceId, invoiceId));
+  }
+
+  async assignUser(invoiceId: string, userId: string, role: string, assignedBy: string) {
+    const [created] = await db.insert(invoiceAssignments).values({
+      invoiceId, userId, role, assignedBy,
+    }).returning();
+    return created;
+  }
+
+  async removeAssignment(assignmentId: string) {
+    await db.delete(invoiceAssignments).where(eq(invoiceAssignments.id, assignmentId));
+  }
+
+  async listCompanyUsers(companyId: string) {
+    const userList = await db.select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+    }).from(users).where(and(eq(users.companyId, companyId), eq(users.isActive, true)));
+
+    // Get roles for each user
+    const result = [];
+    for (const u of userList) {
+      const roles = await db.select({ role: userRoles.role }).from(userRoles).where(eq(userRoles.userId, u.id));
+      result.push({ ...u, roles: roles.map(r => r.role) });
+    }
+    return result;
   }
 }
 

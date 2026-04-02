@@ -1,60 +1,180 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useMemo, useCallback } from 'react';
 import { usePendingApprovals, useApproveInvoice, useRejectApproval } from '@/api/approvals';
-import { InvoiceStateBadge } from '@/components/invoices/InvoiceStateBadge';
-import { Button } from '@/components/ui/Button';
+import { ApprovalCard } from '@/components/approval/ApprovalCard';
+import { BulkApprovalToolbar } from '@/components/approval/BulkApprovalToolbar';
 import { Input } from '@/components/ui/Input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { formatCLP } from '@wildlama/shared';
+import { Card, CardContent } from '@/components/ui/Card';
+import { Checkbox } from '@/components/ui/Checkbox';
 import { toast } from 'sonner';
-import { CheckCircle, XCircle, Eye, MessageSquare } from 'lucide-react';
+import { CheckCircle, Search } from 'lucide-react';
 
 export default function ApprovalQueuePage() {
   const { data: approvals, isLoading } = usePendingApprovals();
   const approveInvoice = useApproveInvoice();
   const rejectApproval = useRejectApproval();
 
-  const [rejectingId, setRejectingId] = useState<string | null>(null);
-  const [rejectReason, setRejectReason] = useState('');
-  const [commentId, setCommentId] = useState<string | null>(null);
-  const [approvalComment, setApprovalComment] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [searchFilter, setSearchFilter] = useState('');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [isBulkApproving, setIsBulkApproving] = useState(false);
 
-  const handleApprove = (invoiceId: string) => {
-    const comment = commentId === invoiceId ? approvalComment : undefined;
-    approveInvoice.mutate(
-      { invoiceId, comment },
-      {
-        onSuccess: () => {
-          toast.success('Factura aprobada');
-          setCommentId(null);
-          setApprovalComment('');
-        },
-        onError: () => toast.error('Error al aprobar'),
+  const filteredApprovals = useMemo(() => {
+    if (!approvals) return [];
+    return approvals.filter((a: any) => {
+      const matchesSearch =
+        !searchFilter ||
+        (a.razonSocialEmisor || '')
+          .toLowerCase()
+          .includes(searchFilter.toLowerCase());
+
+      const amount = Number(a.montoTotal);
+      const matchesMin = !minAmount || amount >= Number(minAmount);
+      const matchesMax = !maxAmount || amount <= Number(maxAmount);
+
+      return matchesSearch && matchesMin && matchesMax;
+    });
+  }, [approvals, searchFilter, minAmount, maxAmount]);
+
+  const handleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
       }
-    );
-  };
+      return next;
+    });
+  }, []);
 
-  const handleReject = (invoiceId: string) => {
-    if (!rejectReason.trim()) {
-      toast.error('Debe ingresar un motivo de rechazo');
-      return;
+  const handleSelectAll = useCallback(() => {
+    if (!filteredApprovals.length) return;
+    const allFilteredIds = filteredApprovals.map((a: any) => a.invoiceId);
+    const allSelected = allFilteredIds.every((id: string) => selectedIds.has(id));
+
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allFilteredIds));
     }
-    rejectApproval.mutate(
-      { invoiceId, reason: rejectReason },
-      {
-        onSuccess: () => {
-          toast.success('Factura rechazada');
-          setRejectingId(null);
-          setRejectReason('');
-        },
-        onError: () => toast.error('Error al rechazar'),
+  }, [filteredApprovals, selectedIds]);
+
+  const handleApprove = useCallback(
+    (invoiceId: string, comment?: string) => {
+      approveInvoice.mutate(
+        { invoiceId, comment },
+        {
+          onSuccess: () => {
+            toast.success('Factura aprobada');
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              next.delete(invoiceId);
+              return next;
+            });
+          },
+          onError: () => toast.error('Error al aprobar'),
+        }
+      );
+    },
+    [approveInvoice]
+  );
+
+  const handleReject = useCallback(
+    (invoiceId: string, reason: string) => {
+      rejectApproval.mutate(
+        { invoiceId, reason },
+        {
+          onSuccess: () => {
+            toast.success('Factura rechazada');
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              next.delete(invoiceId);
+              return next;
+            });
+          },
+          onError: () => toast.error('Error al rechazar'),
+        }
+      );
+    },
+    [rejectApproval]
+  );
+
+  const handleBulkApprove = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+
+    setIsBulkApproving(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const invoiceId of ids) {
+      try {
+        await approveInvoice.mutateAsync({ invoiceId });
+        successCount++;
+      } catch {
+        errorCount++;
       }
-    );
-  };
+    }
+
+    setIsBulkApproving(false);
+    setSelectedIds(new Set());
+
+    if (errorCount === 0) {
+      toast.success(`${successCount} factura${successCount > 1 ? 's' : ''} aprobada${successCount > 1 ? 's' : ''}`);
+    } else {
+      toast.warning(
+        `${successCount} aprobada${successCount > 1 ? 's' : ''}, ${errorCount} con error`
+      );
+    }
+  }, [selectedIds, approveInvoice]);
+
+  const allFilteredSelected =
+    filteredApprovals.length > 0 &&
+    filteredApprovals.every((a: any) => selectedIds.has(a.invoiceId));
+
+  const someFilteredSelected =
+    filteredApprovals.some((a: any) => selectedIds.has(a.invoiceId)) &&
+    !allFilteredSelected;
 
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-bold">Cola de Aprobaciones</h1>
+
+      {/* Filter bar */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por proveedor..."
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Input
+          type="number"
+          placeholder="Monto min"
+          value={minAmount}
+          onChange={(e) => setMinAmount(e.target.value)}
+          className="w-full sm:w-36"
+        />
+        <Input
+          type="number"
+          placeholder="Monto max"
+          value={maxAmount}
+          onChange={(e) => setMaxAmount(e.target.value)}
+          className="w-full sm:w-36"
+        />
+      </div>
+
+      {/* Bulk toolbar */}
+      <BulkApprovalToolbar
+        selectedCount={selectedIds.size}
+        onApproveAll={handleBulkApprove}
+        onClearSelection={() => setSelectedIds(new Set())}
+        isApproving={isBulkApproving}
+      />
 
       {isLoading ? (
         <div className="text-center py-8 text-muted-foreground">Cargando...</div>
@@ -68,127 +188,41 @@ export default function ApprovalQueuePage() {
             </div>
           </CardContent>
         </Card>
+      ) : filteredApprovals.length === 0 ? (
+        <Card>
+          <CardContent className="py-12">
+            <div className="text-center">
+              <Search className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Sin resultados</h3>
+              <p className="text-muted-foreground">
+                No se encontraron facturas con los filtros aplicados.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-4">
-          {approvals.map((approval: any) => (
-            <Card key={approval.id}>
-              <CardContent className="pt-6">
-                <div className="flex flex-col lg:flex-row lg:items-center gap-4">
-                  {/* Invoice info */}
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <Link
-                        to={`/invoices/${approval.invoiceId}`}
-                        className="text-lg font-semibold text-primary hover:underline"
-                      >
-                        {approval.tipoDte} #{approval.folio}
-                      </Link>
-                      <InvoiceStateBadge state={approval.state || 'pendiente'} />
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Proveedor: </span>
-                        <span className="font-medium">{approval.razonSocialEmisor}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">RUT: </span>
-                        <span className="font-mono">{approval.rutEmisor}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Fecha: </span>
-                        <span>{approval.fechaEmision}</span>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Total: </span>
-                        <span className="font-bold">{formatCLP(Number(approval.montoTotal))}</span>
-                      </div>
-                    </div>
-                  </div>
+          {/* Select all */}
+          <div className="flex items-center gap-2 px-1">
+            <Checkbox
+              checked={allFilteredSelected}
+              indeterminate={someFilteredSelected}
+              onChange={handleSelectAll}
+            />
+            <span className="text-sm text-muted-foreground">
+              Seleccionar todas ({filteredApprovals.length})
+            </span>
+          </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link to={`/invoices/${approval.invoiceId}`}>
-                        <Eye className="w-4 h-4 mr-1" />
-                        Ver
-                      </Link>
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setCommentId(commentId === approval.invoiceId ? null : approval.invoiceId)}
-                    >
-                      <MessageSquare className="w-4 h-4 mr-1" />
-                      Comentar
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={() => handleApprove(approval.invoiceId)}
-                      disabled={approveInvoice.isPending}
-                      className="bg-green-600 hover:bg-green-700"
-                    >
-                      <CheckCircle className="w-4 h-4 mr-1" />
-                      Aprobar
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => setRejectingId(rejectingId === approval.invoiceId ? null : approval.invoiceId)}
-                    >
-                      <XCircle className="w-4 h-4 mr-1" />
-                      Rechazar
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Comment input */}
-                {commentId === approval.invoiceId && (
-                  <div className="mt-4 flex gap-2">
-                    <Input
-                      placeholder="Comentario de aprobacion (opcional)..."
-                      value={approvalComment}
-                      onChange={(e) => setApprovalComment(e.target.value)}
-                      className="flex-1"
-                    />
-                    <Button
-                      size="sm"
-                      onClick={() => handleApprove(approval.invoiceId)}
-                      disabled={approveInvoice.isPending}
-                      className="bg-green-600 hover:bg-green-700"
-                    >
-                      Aprobar con comentario
-                    </Button>
-                  </div>
-                )}
-
-                {/* Reject input */}
-                {rejectingId === approval.invoiceId && (
-                  <div className="mt-4 flex gap-2">
-                    <Input
-                      placeholder="Motivo de rechazo (obligatorio)..."
-                      value={rejectReason}
-                      onChange={(e) => setRejectReason(e.target.value)}
-                      className="flex-1"
-                    />
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleReject(approval.invoiceId)}
-                      disabled={rejectApproval.isPending}
-                    >
-                      Confirmar Rechazo
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => { setRejectingId(null); setRejectReason(''); }}
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+          {filteredApprovals.map((approval: any) => (
+            <ApprovalCard
+              key={approval.id || approval.invoiceId}
+              approval={approval}
+              isSelected={selectedIds.has(approval.invoiceId)}
+              onSelect={handleSelect}
+              onApprove={handleApprove}
+              onReject={handleReject}
+            />
           ))}
         </div>
       )}
