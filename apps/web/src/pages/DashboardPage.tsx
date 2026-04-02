@@ -13,11 +13,11 @@ import { es } from 'date-fns/locale';
 const STATE_COLORS: Record<string, string> = {
   recibida: '#3b82f6',
   pendiente: '#f59e0b',
-  aprobada: '#22c55e',
+  aprobada: '#10b981',
   contabilizada: '#6366f1',
   en_nomina: '#8b5cf6',
-  pagada: '#10b981',
-  rechazada: '#ef4444',
+  pagada: '#14b8a6',
+  rechazada: '#f43f5e',
 };
 
 export default function DashboardPage() {
@@ -99,52 +99,52 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <FileText className="w-5 h-5 text-blue-600" />
-              </div>
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Facturas</p>
-                <p className="text-2xl font-bold">{totalInvoices}</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Total Facturas</p>
+                <p className="text-3xl font-bold tabular-nums mt-1">{totalInvoices}</p>
+              </div>
+              <div className="rounded-xl p-3 bg-blue-500/10">
+                <FileText className="w-6 h-6 text-blue-600" />
               </div>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-yellow-100 rounded-lg">
-                <Clock className="w-5 h-5 text-yellow-600" />
-              </div>
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Pendientes</p>
-                <p className="text-2xl font-bold">{pendingCount}</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Pendientes</p>
+                <p className="text-3xl font-bold tabular-nums mt-1">{pendingCount}</p>
+              </div>
+              <div className="rounded-xl p-3 bg-amber-500/10">
+                <Clock className="w-6 h-6 text-amber-600" />
               </div>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <CheckSquare className="w-5 h-5 text-green-600" />
-              </div>
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Aprobadas</p>
-                <p className="text-2xl font-bold">{approvedCount}</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Aprobadas</p>
+                <p className="text-3xl font-bold tabular-nums mt-1">{approvedCount}</p>
+              </div>
+              <div className="rounded-xl p-3 bg-emerald-500/10">
+                <CheckSquare className="w-6 h-6 text-emerald-600" />
               </div>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <AlertTriangle className="w-5 h-5 text-red-600" />
-              </div>
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Rechazadas</p>
-                <p className="text-2xl font-bold">{rejectedCount}</p>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Rechazadas</p>
+                <p className="text-3xl font-bold tabular-nums mt-1">{rejectedCount}</p>
+              </div>
+              <div className="rounded-xl p-3 bg-rose-500/10">
+                <AlertTriangle className="w-6 h-6 text-rose-600" />
               </div>
             </div>
           </CardContent>
@@ -192,11 +192,11 @@ export default function DashboardPage() {
             {agingData && agingData.length > 0 ? (
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={agingData}>
-                  <CartesianGrid strokeDasharray="3 3" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="bucket" />
                   <YAxis />
                   <Tooltip formatter={(value: any) => [formatCLP(value), 'Monto']} />
-                  <Bar dataKey="total" fill="#6366f1" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="total" fill="#3b62d4" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (

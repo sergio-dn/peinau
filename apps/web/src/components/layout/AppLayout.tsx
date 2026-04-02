@@ -37,7 +37,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-background">
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div
@@ -49,12 +49,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 bg-white border-r transform transition-transform lg:translate-x-0 lg:static',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          'fixed inset-y-0 left-0 z-50 w-60 bg-white border-r transform transition-transform lg:translate-x-0 lg:static',
+          sidebarOpen ? 'translate-x-0 shadow-sm' : '-translate-x-full'
         )}
       >
         <div className="flex items-center justify-between h-16 px-6 border-b">
-          <h1 className="text-lg font-bold text-primary">Wild Lama</h1>
+          <h1 className="text-lg font-bold tracking-tight text-primary">Wild Lama</h1>
           <button
             className="lg:hidden"
             onClick={() => setSidebarOpen(false)}
@@ -72,10 +72,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 to={item.href}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                  'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    ? 'bg-primary/10 text-primary font-semibold relative before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-6 before:w-[3px] before:rounded-full before:bg-primary'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 )}
                 onClick={() => setSidebarOpen(false)}
               >
@@ -87,7 +87,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t">
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center gap-3 mb-3 bg-slate-50 rounded-lg p-2">
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-bold">
               {user?.name?.charAt(0) || '?'}
             </div>
@@ -108,14 +108,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center h-16 px-6 border-b bg-white lg:hidden">
+        <header className="flex items-center h-16 px-6 border-b bg-white shadow-sm lg:hidden">
           <button onClick={() => setSidebarOpen(true)}>
             <Menu className="w-5 h-5" />
           </button>
           <h1 className="ml-4 text-lg font-bold">Wild Lama</h1>
         </header>
 
-        <main className="flex-1 overflow-auto p-6">
+        <main className="flex-1 overflow-auto px-6 py-6 lg:px-8">
           {children}
         </main>
       </div>

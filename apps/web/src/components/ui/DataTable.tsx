@@ -43,14 +43,14 @@ export function DataTable<TData>({
         <table className="w-full text-sm">
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
-              <tr key={headerGroup.id} className="border-b bg-muted/50">
+              <tr key={headerGroup.id} className="border-b bg-slate-50/80">
                 {headerGroup.headers.map((header) => {
                   const canSort = header.column.getCanSort();
                   return (
                     <th
                       key={header.id}
                       className={cn(
-                        'h-10 px-3 text-left align-middle font-medium text-muted-foreground',
+                        'h-11 px-3 py-3 text-left align-middle text-xs font-semibold uppercase tracking-wider text-muted-foreground',
                         canSort && 'cursor-pointer select-none'
                       )}
                       style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
@@ -84,7 +84,7 @@ export function DataTable<TData>({
                     <tr
                       key={row.id}
                       className={cn(
-                        'border-b transition-colors hover:bg-muted/50',
+                        'border-b border-border/50 transition-colors duration-100 hover:bg-slate-50/80',
                         row.getIsSelected() && 'bg-muted',
                         onRowClick && 'cursor-pointer'
                       )}
@@ -96,7 +96,7 @@ export function DataTable<TData>({
                         return (
                           <td
                             key={cell.id}
-                            className="h-12 px-3 align-middle"
+                            className="py-3 px-3 align-middle"
                             onClick={
                               isCheckboxColumn && onRowClick
                                 ? (e) => e.stopPropagation()
@@ -113,7 +113,7 @@ export function DataTable<TData>({
                     <tr>
                       <td
                         colSpan={visibleColumns.length}
-                        className="h-24 text-center text-muted-foreground"
+                        className="h-32 text-center text-muted-foreground"
                       >
                         Sin resultados.
                       </td>
@@ -125,13 +125,13 @@ export function DataTable<TData>({
 
       {/* Pagination */}
       {totalItems != null && totalItems > 0 && (
-        <div className="flex items-center justify-between px-2">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex items-center justify-between border-t pt-4 mt-2 px-2">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span>
               Mostrando {from}-{to} de {totalItems}
             </span>
             <select
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs text-muted-foreground"
               value={pageSize}
               onChange={(e) => {
                 table.setPageSize(Number(e.target.value));
