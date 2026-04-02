@@ -2,13 +2,6 @@ import { env } from '../config/env.js';
 
 // --- Response types ---
 
-export interface SiiApiCompany {
-  rut: string;
-  razon_social: string | null;
-  activa: boolean;
-  created_at: string | null;
-}
-
 export interface SiiApiPeriodo {
   codigo: string;
   nombre: string;
@@ -76,28 +69,47 @@ export interface SiiApiPaginatedResponse<T> {
 
 // --- Mapper ---
 
-function formatRut(rutBody?: string, dv?: string): string {
-  if (!rutBody || !dv) return '';
-  return `${rutBody}-${dv}`;
+/**
+ * Converts "DD/MM/YYYY" to "YYYY-MM-DD", or returns as-is if already ISO.
+ */
+function normalizeFecha(raw: string): string {
+  const ddmmyyyy = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (ddmmyyyy) {
+    return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
+  }
+  return raw;
+}
+
+/**
+ * Parses "DD/MM/YYYY HH:mm:ss" or ISO string into a Date.
+ */
+function parseFechaRecepcion(raw: string): Date {
+  const match = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}:\d{2}:\d{2})$/);
+  if (match) {
+    return new Date(`${match[3]}-${match[2]}-${match[1]}T${match[4]}`);
+  }
+  return new Date(raw);
 }
 
 export function mapApiInvoiceToUpsert(item: Record<string, any>) {
-  const tipoDte = item.tipo_doc ?? item.detTipoDte ?? item.tipo_dte ?? 0;
-  const folio = item.folio ?? item.detNroDoc ?? 0;
-  const fechaEmision = item.fecha_emision ?? item.detFchDoc ?? '';
-  const rutEmisor = item.rut_emisor ?? item.rut_proveedor ?? formatRut(item.detRutDoc, item.detDvDoc) ?? '';
-  const razonSocialEmisor = item.razon_social ?? item.razon_social_emisor ?? item.detRznSoc ?? '';
-  const montoExento = Number(item.monto_exento ?? item.detMntExe ?? 0);
-  const montoNeto = Number(item.monto_neto ?? item.detMntNeto ?? 0);
-  const montoIva = Number(item.monto_iva ?? item.detMntIVA ?? 0);
-  const montoTotal = Number(item.monto_total ?? item.detMntTotal ?? 0);
-  const fechaRecepcion = item.fecha_recepcion ?? item.detFchRecep ?? null;
+  const tipoDte = Number(item.tipo_doc ?? 0);
+  const folio = Number(item.folio ?? 0);
+  const fechaEmision = normalizeFecha(item.fecha_emision ?? '');
+  const rutEmisor = item.rut_contraparte && item.dv_contraparte
+    ? `${item.rut_contraparte}-${item.dv_contraparte}`
+    : '';
+  const razonSocialEmisor = item.razon_social ?? '';
+  const montoExento = Number(item.monto_exento ?? 0);
+  const montoNeto = Number(item.monto_neto ?? 0);
+  const montoIva = Number(item.monto_iva ?? 0);
+  const montoTotal = Number(item.monto_total ?? 0);
+  const fechaRecepcion = item.fecha_recepcion ?? null;
 
   return {
-    tipoDte: Number(tipoDte),
-    folio: Number(folio),
+    tipoDte,
+    folio,
     fechaEmision,
-    fechaRecepcionSii: fechaRecepcion ? new Date(fechaRecepcion) : undefined,
+    fechaRecepcionSii: fechaRecepcion ? parseFechaRecepcion(fechaRecepcion) : undefined,
     rutEmisor,
     razonSocialEmisor,
     montoExento,
@@ -160,54 +172,35 @@ class SiiApiClient {
     return data as T;
   }
 
-  // Company management
-
-  async registerCompany(rut: string, clave: string, razonSocial?: string): Promise<SiiApiCompany> {
-    return this.request<SiiApiCompany>('POST', '/api/v1/empresas', {
-      rut,
-      clave,
-      razon_social: razonSocial ?? null,
-    });
-  }
-
-  async listCompanies(): Promise<SiiApiCompany[]> {
-    const resp = await this.request<{ empresas: SiiApiCompany[] }>('GET', '/api/v1/empresas');
-    return resp.empresas;
-  }
-
   // Sync
 
   async triggerSync(
-    rut: string,
     clave: string,
     desde?: string,
     hasta?: string,
-    force?: boolean,
   ): Promise<SiiApiSyncStartResponse> {
-    return this.request<SiiApiSyncStartResponse>('POST', `/api/v1/${rut}/sync`, {
+    return this.request<SiiApiSyncStartResponse>('POST', '/api/v1/sync', {
       clave,
       ...(desde && { desde }),
       ...(hasta && { hasta }),
-      ...(force && { force }),
     });
   }
 
-  async getSyncStatus(rut: string): Promise<SiiApiSyncStatus> {
-    return this.request<SiiApiSyncStatus>('GET', `/api/v1/${rut}/sync/status`);
+  async getSyncStatus(): Promise<SiiApiSyncStatus> {
+    return this.request<SiiApiSyncStatus>('GET', '/api/v1/sync/status');
   }
 
   // Data retrieval
 
-  async getPeriodos(rut: string): Promise<SiiApiPeriodo[]> {
+  async getPeriodos(): Promise<SiiApiPeriodo[]> {
     const resp = await this.request<{ rut: string; periodos: SiiApiPeriodo[] }>(
       'GET',
-      `/api/v1/${rut}/periodos`,
+      '/api/v1/periodos',
     );
     return resp.periodos;
   }
 
   async getCompras(
-    rut: string,
     periodo: string,
     limit = 50,
     offset = 0,
@@ -216,11 +209,10 @@ class SiiApiClient {
       limit: String(limit),
       offset: String(offset),
     });
-    return this.request('GET', `/api/v1/${rut}/compras/${periodo}?${params}`);
+    return this.request('GET', `/api/v1/compras/${periodo}?${params}`);
   }
 
   async getVentas(
-    rut: string,
     periodo: string,
     limit = 50,
     offset = 0,
@@ -229,19 +221,19 @@ class SiiApiClient {
       limit: String(limit),
       offset: String(offset),
     });
-    return this.request('GET', `/api/v1/${rut}/ventas/${periodo}?${params}`);
+    return this.request('GET', `/api/v1/ventas/${periodo}?${params}`);
   }
 
-  async getAllCompras(rut: string, periodo: string): Promise<Record<string, any>[]> {
-    return this.fetchAllPages((limit, offset) => this.getCompras(rut, periodo, limit, offset));
+  async getAllCompras(periodo: string): Promise<Record<string, any>[]> {
+    return this.fetchAllPages((limit, offset) => this.getCompras(periodo, limit, offset));
   }
 
-  async getAllVentas(rut: string, periodo: string): Promise<Record<string, any>[]> {
-    return this.fetchAllPages((limit, offset) => this.getVentas(rut, periodo, limit, offset));
+  async getAllVentas(periodo: string): Promise<Record<string, any>[]> {
+    return this.fetchAllPages((limit, offset) => this.getVentas(periodo, limit, offset));
   }
 
-  async getResumen(rut: string, periodo: string): Promise<SiiApiResumen> {
-    return this.request<SiiApiResumen>('GET', `/api/v1/${rut}/resumen/${periodo}`);
+  async getResumen(periodo: string): Promise<SiiApiResumen> {
+    return this.request<SiiApiResumen>('GET', `/api/v1/resumen/${periodo}`);
   }
 
   // Helpers
@@ -265,13 +257,13 @@ class SiiApiClient {
     return all;
   }
 
-  async waitForSync(rut: string, timeoutMs = 300_000): Promise<SiiApiSyncStatus> {
+  async waitForSync(timeoutMs = 300_000): Promise<SiiApiSyncStatus> {
     const start = Date.now();
     let delay = 3_000;
 
     while (Date.now() - start < timeoutMs) {
       await new Promise(resolve => setTimeout(resolve, delay));
-      const status = await this.getSyncStatus(rut);
+      const status = await this.getSyncStatus();
 
       const hasLogs = status.logs.length > 0;
       if (hasLogs) {
@@ -284,7 +276,7 @@ class SiiApiClient {
       delay = Math.min(delay * 1.5, 15_000);
     }
 
-    return this.getSyncStatus(rut);
+    return this.getSyncStatus();
   }
 }
 

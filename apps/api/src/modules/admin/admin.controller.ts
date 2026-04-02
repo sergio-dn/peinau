@@ -106,14 +106,10 @@ export async function testSiiConnection(req: Request, res: Response) {
       rut = company.siiUsername;
       password = decrypt(company.siiPasswordEncrypted);
     }
-    await siiApiClient.registerCompany(rut, password);
+    // Test by triggering a sync status check — if the API key is valid, it works
+    await siiApiClient.getSyncStatus();
     res.json({ success: true, message: 'Conexion exitosa con el SII' });
   } catch (err: any) {
-    // 409/422 means already registered = credentials are valid
-    if (err.statusCode === 409 || err.statusCode === 422) {
-      res.json({ success: true, message: 'Conexion exitosa con el SII' });
-      return;
-    }
     console.error('[SII Test] Connection error:', err.message);
     res.status(400).json({
       success: false,
@@ -207,11 +203,11 @@ export async function debugSiiQuery(req: Request, res: Response) {
     const prevPeriodo = `${prevYear}${String(prevMonth).padStart(2, '0')}`;
 
     const [periodos, syncStatus, resumenActual, resumenPrev, comprasActual] = await Promise.all([
-      siiApiClient.getPeriodos(company.rut).catch(() => []),
-      siiApiClient.getSyncStatus(company.rut).catch(() => ({ rut: company.rut, logs: [] })),
-      siiApiClient.getResumen(company.rut, periodo).catch(() => null),
-      siiApiClient.getResumen(company.rut, prevPeriodo).catch(() => null),
-      siiApiClient.getCompras(company.rut, periodo, 5, 0).catch(() => null),
+      siiApiClient.getPeriodos().catch(() => []),
+      siiApiClient.getSyncStatus().catch(() => ({ rut: company.rut, logs: [] })),
+      siiApiClient.getResumen(periodo).catch(() => null),
+      siiApiClient.getResumen(prevPeriodo).catch(() => null),
+      siiApiClient.getCompras(periodo, 5, 0).catch(() => null),
     ]);
 
     res.json({

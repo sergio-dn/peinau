@@ -5,7 +5,23 @@ import { invoiceService } from '../invoices/invoice.service.js';
 import { decrypt } from '../../lib/encryption.js';
 import { siiApiClient, mapApiInvoiceToUpsert } from '../../lib/sii-api-client.js';
 
-const SYNC_START_PERIOD = '202501';
+function getCurrentAndPreviousPeriods(): { desde: string; hasta: string; periodos: string[] } {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1; // 1-based
+
+  const hasta = `${year}${String(month).padStart(2, '0')}`;
+
+  let prevYear = year;
+  let prevMonth = month - 1;
+  if (prevMonth === 0) {
+    prevMonth = 12;
+    prevYear = year - 1;
+  }
+  const desde = `${prevYear}${String(prevMonth).padStart(2, '0')}`;
+
+  return { desde, hasta, periodos: [desde, hasta] };
+}
 
 export class SiiSyncService {
   async syncCompany(companyId: string) {
@@ -28,43 +44,30 @@ export class SiiSyncService {
 
       console.log(`[SII Sync] Company RUT: ${company.rut}, SII User: ${company.siiUsername}`);
 
-      // 1. Register company on external API (idempotent)
-      try {
-        await siiApiClient.registerCompany(company.rut, password, company.razonSocial || undefined);
-        console.log(`[SII Sync] Company registered on external API`);
-      } catch (err: any) {
-        // 409 or similar = already registered, that's fine
-        if (err.statusCode !== 409 && err.statusCode !== 422) {
-          throw err;
-        }
-        console.log(`[SII Sync] Company already registered on external API`);
-      }
+      // Only sync current month + previous month
+      const { desde, hasta, periodos: targetPeriodos } = getCurrentAndPreviousPeriods();
 
-      // 2. Build period range
-      const now = new Date();
-      const hasta = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+      // 1. Trigger sync on external API
+      console.log(`[SII Sync] Triggering external sync from ${desde} to ${hasta}`);
+      await siiApiClient.triggerSync(password, desde, hasta);
 
-      // 3. Trigger sync on external API
-      console.log(`[SII Sync] Triggering external sync from ${SYNC_START_PERIOD} to ${hasta}`);
-      await siiApiClient.triggerSync(company.rut, password, SYNC_START_PERIOD, hasta);
-
-      // 4. Wait for sync to complete
+      // 2. Wait for sync to complete
       console.log(`[SII Sync] Waiting for external sync to complete...`);
-      const syncStatus = await siiApiClient.waitForSync(company.rut);
+      const syncStatus = await siiApiClient.waitForSync();
       console.log(`[SII Sync] External sync finished. Logs: ${syncStatus.logs.length}`);
 
-      // 5. Get available periods
-      const periodos = await siiApiClient.getPeriodos(company.rut);
-      const relevantPeriodos = periodos.filter(p => p.codigo >= SYNC_START_PERIOD);
-      console.log(`[SII Sync] Found ${relevantPeriodos.length} periods from ${SYNC_START_PERIOD}`);
+      // 3. Get available periods, filter to target months only
+      const periodos = await siiApiClient.getPeriodos();
+      const relevantPeriodos = periodos.filter(p => targetPeriodos.includes(p.codigo));
+      console.log(`[SII Sync] Fetching ${relevantPeriodos.length} periods: ${targetPeriodos.join(', ')}`);
 
-      // 6. Fetch and upsert compras from each period
+      // 4. Fetch and upsert compras from each period
       let totalFound = 0;
       let newCount = 0;
 
       for (const periodo of relevantPeriodos) {
         try {
-          const compras = await siiApiClient.getAllCompras(company.rut, periodo.codigo);
+          const compras = await siiApiClient.getAllCompras(periodo.codigo);
           totalFound += compras.length;
 
           for (const item of compras) {
