@@ -24,6 +24,13 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/DropdownMenu';
 import { formatCLP } from '@wildlama/shared';
+
+function formatDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return '-';
+  // Handle ISO date "YYYY-MM-DD" or datetime strings
+  const d = new Date(dateStr.includes('T') ? dateStr : dateStr + 'T12:00:00');
+  return d.toLocaleDateString('es-CL'); // DD/MM/YYYY
+}
 import { Search, ChevronDown } from 'lucide-react';
 
 // ---------------------------------------------------------------------------
@@ -94,6 +101,7 @@ const columns = [
   columnHelper.accessor('fechaEmision', {
     header: 'Fecha',
     enableSorting: true,
+    cell: (info) => formatDate(info.getValue()),
   }),
   columnHelper.accessor('razonSocialEmisor', {
     header: 'Proveedor',

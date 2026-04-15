@@ -22,7 +22,7 @@ const envSchema = z.object({
 
   // SII API
   SII_API_URL: z.string().url().default('https://sii-api-916356778383.southamerica-east1.run.app'),
-  SII_API_KEY: z.string().min(1),
+  SII_API_KEY: z.string().default(''),
 
   // Encryption
   ENCRYPTION_KEY: z.string().min(32),
