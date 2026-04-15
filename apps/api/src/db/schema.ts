@@ -25,6 +25,9 @@ export const userRoleEnum = pgEnum('user_role', [
   'contabilidad',
   'aprobador',
   'visualizador',
+  'tesoreria',
+  'jefatura',
+  'cfo',
 ]);
 
 export const invoiceStateEnum = pgEnum('invoice_state', [
@@ -73,6 +76,7 @@ export const users = pgTable('users', {
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   isActive: boolean('is_active').default(true).notNull(),
+  supabaseAuthId: text('supabase_auth_id').unique(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -130,6 +134,8 @@ export const costCenters = pgTable('cost_centers', {
   code: varchar('code', { length: 20 }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   parentCode: varchar('parent_code', { length: 20 }),
+  parentId: uuid('parent_id').references(() => costCenters.id),
+  level: integer('level').default(0).notNull(),
   isActive: boolean('is_active').default(true).notNull(),
 }, (table) => ({
   uniqueCompanyCode: uniqueIndex('uq_cost_centers_company_code').on(table.companyId, table.code),
@@ -152,6 +158,13 @@ export const invoices = pgTable('invoices', {
   montoIva: bigint('monto_iva', { mode: 'number' }).default(0).notNull(),
   tasaIva: numeric('tasa_iva', { precision: 5, scale: 2 }).default('19').notNull(),
   montoTotal: bigint('monto_total', { mode: 'number' }).notNull(),
+  currency: text('currency').default('CLP').notNull(),
+  currencyRate: numeric('currency_rate', { precision: 12, scale: 4 }),
+  paymentWeek: date('payment_week'),
+  businessUnit: text('business_unit'),
+  siiRejectionDeadline: timestamp('sii_rejection_deadline', { withTimezone: true }),
+  siiAcceptedAt: timestamp('sii_accepted_at', { withTimezone: true }),
+  siiRejectedAt: timestamp('sii_rejected_at', { withTimezone: true }),
   state: invoiceStateEnum('state').default('recibida').notNull(),
   dteXml: text('dte_xml'),
   siiTrackId: varchar('sii_track_id', { length: 100 }),
@@ -376,6 +389,64 @@ export const invoiceAssignments = pgTable('invoice_assignments', {
 }, (table) => ({
   uniqueInvoiceUserRole: uniqueIndex('uq_invoice_assignments_invoice_user_role').on(table.invoiceId, table.userId, table.role),
 }));
+
+// ─── Purchase Orders ───────────────────────────────────────────────────────────
+
+export const purchaseOrders = pgTable('purchase_orders', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  supplierId: uuid('supplier_id').references(() => suppliers.id),
+  poNumber: text('po_number').notNull(),
+  description: text('description'),
+  totalAmount: numeric('total_amount', { precision: 15, scale: 2 }).notNull(),
+  currency: text('currency').default('CLP').notNull(),
+  status: text('status').default('open').notNull(), // open | partial | closed | cancelled
+  issuedAt: date('issued_at'),
+  expiresAt: date('expires_at'),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── User Cost Center Assignments ──────────────────────────────────────────────
+
+export const userCostCenterAssignments = pgTable('user_cost_center_assignments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  costCenterId: uuid('cost_center_id').notNull().references(() => costCenters.id, { onDelete: 'cascade' }),
+  canApprove: boolean('can_approve').default(false).notNull(),
+  approvalLimit: numeric('approval_limit', { precision: 15, scale: 2 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── Supplier Auto Rules ───────────────────────────────────────────────────────
+
+export const supplierAutoRules = pgTable('supplier_auto_rules', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  supplierId: uuid('supplier_id').notNull().references(() => suppliers.id),
+  defaultCostCenterId: uuid('default_cost_center_id').references(() => costCenters.id),
+  defaultAccountCode: text('default_account_code'),
+  defaultCategory: text('default_category'),
+  autoApproveBelow: numeric('auto_approve_below', { precision: 15, scale: 2 }),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── API Keys ─────────────────────────────────────────────────────────────────
+
+export const apiKeys = pgTable('api_keys', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  name: text('name').notNull(),
+  keyHash: text('key_hash').notNull().unique(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  isActive: boolean('is_active').default(true).notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 // ─── Relations ─────────────────────────────────────────────────────────────────
 
