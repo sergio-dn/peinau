@@ -266,6 +266,7 @@ function SettingsTab() {
   // SII credentials form
   const [siiRut, setSiiRut] = useState('');
   const [siiPassword, setSiiPassword] = useState('');
+  const [siiApiKey, setSiiApiKey] = useState('');
   const [siiFormReady, setSiiFormReady] = useState(false);
 
   // Company settings form
@@ -290,22 +291,21 @@ function SettingsTab() {
       await apiClient.put('/admin/sii-credentials', {
         siiUsername: siiRut,
         siiPassword: siiPassword,
+        ...(siiApiKey ? { siiApiKey } : {}),
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
       toast.success('Credenciales SII guardadas');
       setSiiPassword('');
+      setSiiApiKey('');
     },
     onError: () => toast.error('Error al guardar credenciales'),
   });
 
   const testSii = useMutation({
     mutationFn: async () => {
-      const { data } = await apiClient.post('/admin/sii-test', {
-        siiUsername: siiRut || undefined,
-        siiPassword: siiPassword || undefined,
-      });
+      const { data } = await apiClient.post('/admin/sii-test');
       return data;
     },
     onSuccess: (data) => toast.success(data.message),
@@ -393,12 +393,24 @@ function SettingsTab() {
                 onChange={(e) => setSiiPassword(e.target.value)}
               />
             </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">Token API SII</label>
+              <Input
+                type="password"
+                placeholder="Token del servicio SII API"
+                value={siiApiKey}
+                onChange={(e) => setSiiApiKey(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Token de autenticacion del servicio externo SII
+              </p>
+            </div>
             <div className="flex flex-wrap gap-2">
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => testSii.mutate()}
-                disabled={testSii.isPending || (!siiRut && !settings?.siiConnected)}
+                disabled={testSii.isPending}
               >
                 {testSii.isPending ? 'Probando...' : 'Probar Conexion'}
               </Button>

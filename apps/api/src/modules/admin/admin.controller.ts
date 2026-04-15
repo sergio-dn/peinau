@@ -2,8 +2,9 @@ import { Request, Response } from 'express';
 import { db } from '../../config/database.js';
 import { companies, users, userRoles, siiSyncLogs } from '../../db/schema.js';
 import { eq, desc } from 'drizzle-orm';
-import { encrypt, decrypt } from '../../lib/encryption.js';
+import { encrypt } from '../../lib/encryption.js';
 import { siiApiClient } from '../../lib/sii-api-client.js';
+import { env } from '../../config/env.js';
 import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 
@@ -28,7 +29,7 @@ export async function getSettings(req: Request, res: Response) {
     rutEmpresa: company.rut,
     giro: company.giro,
     direccion: company.direccion,
-    siiConnected: !!(company.siiUsername && company.siiPasswordEncrypted),
+    siiConnected: !!(env.SII_API_KEY),
     siiUsername: company.siiUsername || null,
     lastSync: lastSync?.startedAt || null,
     lastSyncStatus: lastSync?.status || null,
@@ -66,6 +67,7 @@ export async function updateSettings(req: Request, res: Response) {
 const siiCredentialsSchema = z.object({
   siiUsername: z.string().min(1, 'RUT SII es requerido'),
   siiPassword: z.string().min(1, 'Clave SII es requerida'),
+  siiApiKey: z.string().optional(),
 });
 
 export async function updateSiiCredentials(req: Request, res: Response) {
@@ -76,12 +78,26 @@ export async function updateSiiCredentials(req: Request, res: Response) {
 
   const encrypted = encrypt(parsed.data.siiPassword);
 
+  const updatePayload: Record<string, any> = {
+    siiUsername: parsed.data.siiUsername,
+    siiPasswordEncrypted: encrypted,
+    updatedAt: new Date(),
+  };
+
+  // Store encrypted API key only if provided and the column exists in the schema
+  if (parsed.data.siiApiKey) {
+    try {
+      const encryptedApiKey = encrypt(parsed.data.siiApiKey);
+      if ('siiApiKeyEncrypted' in (companies as any)) {
+        updatePayload.siiApiKeyEncrypted = encryptedApiKey;
+      }
+    } catch {
+      // Column doesn't exist yet — skip silently
+    }
+  }
+
   await db.update(companies)
-    .set({
-      siiUsername: parsed.data.siiUsername,
-      siiPasswordEncrypted: encrypted,
-      updatedAt: new Date(),
-    })
+    .set(updatePayload)
     .where(eq(companies.id, req.user!.companyId));
 
   res.json({ success: true, message: 'Credenciales SII guardadas' });
@@ -89,23 +105,14 @@ export async function updateSiiCredentials(req: Request, res: Response) {
 
 // POST /api/admin/sii-test
 export async function testSiiConnection(req: Request, res: Response) {
-  const { siiUsername, siiPassword } = req.body;
-
-  // Use provided credentials or fall back to stored ones
-  let rut = siiUsername;
-  let password = siiPassword;
+  if (!env.SII_API_KEY) {
+    return res.status(400).json({
+      success: false,
+      error: 'Token SII API no configurado en el servidor',
+    });
+  }
 
   try {
-    if (!rut || !password) {
-      const company = await db.query.companies.findFirst({
-        where: eq(companies.id, req.user!.companyId),
-      });
-      if (!company?.siiUsername || !company?.siiPasswordEncrypted) {
-        return res.status(400).json({ error: 'No hay credenciales SII configuradas' });
-      }
-      rut = company.siiUsername;
-      password = decrypt(company.siiPasswordEncrypted);
-    }
     // Test by triggering a sync status check — if the API key is valid, it works
     await siiApiClient.getSyncStatus();
     res.json({ success: true, message: 'Conexion exitosa con el SII' });

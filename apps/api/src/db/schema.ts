@@ -63,6 +63,7 @@ export const companies = pgTable('companies', {
   direccion: varchar('direccion', { length: 500 }),
   siiUsername: varchar('sii_username', { length: 100 }),
   siiPasswordEncrypted: text('sii_password_encrypted'),
+  siiApiKeyEncrypted: text('sii_api_key_encrypted'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
