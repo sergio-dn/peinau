@@ -7,31 +7,22 @@ const apiClient = axios.create({
   withCredentials: true,
 });
 
-// Add auth token to requests
+// Add Supabase session token to requests
 apiClient.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().accessToken;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const session = useAuthStore.getState().session;
+  if (session?.access_token) {
+    config.headers.Authorization = `Bearer ${session.access_token}`;
   }
   return config;
 });
 
-// Handle 401 responses - refresh token
+// Handle 401 responses
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      try {
-        const { data } = await axios.post('/api/auth/refresh', {}, { withCredentials: true });
-        useAuthStore.getState().setAccessToken(data.accessToken);
-        originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
-        return apiClient(originalRequest);
-      } catch {
-        useAuthStore.getState().logout();
-        window.location.href = '/login';
-      }
+    if (error.response?.status === 401) {
+      useAuthStore.getState().logout();
+      window.location.href = '/login';
     }
     return Promise.reject(error);
   }
