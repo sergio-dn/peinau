@@ -12,8 +12,8 @@ jobs:
   deploy-api:
     name: Deploy API to Cloud Run
     runs-on: ubuntu-latest
-    # Skip if GCP secrets are not configured yet
-    if: ${{ secrets.GCP_SA_KEY != '' && secrets.GCP_PROJECT_ID != '' }}
+    # Set repo variable GCP_CONFIGURED=true to enable this job
+    if: vars.GCP_CONFIGURED == 'true'
     permissions:
       contents: read
       id-token: write
@@ -59,8 +59,8 @@ jobs:
   deploy-web:
     name: Deploy Web to Vercel
     runs-on: ubuntu-latest
-    # Skip if Vercel secrets are not configured yet
-    if: ${{ secrets.VERCEL_TOKEN != '' }}
+    # Set repo variable VERCEL_CONFIGURED=true to enable this job
+    if: vars.VERCEL_CONFIGURED == 'true'
     steps:
       - uses: actions/checkout@v4
 

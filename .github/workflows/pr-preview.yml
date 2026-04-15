@@ -8,7 +8,8 @@ jobs:
   preview-web:
     name: Vercel Preview
     runs-on: ubuntu-latest
-    if: ${{ secrets.VERCEL_TOKEN != '' }}
+    # Set repo variable VERCEL_CONFIGURED=true to enable this job
+    if: vars.VERCEL_CONFIGURED == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -34,7 +35,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @peinau/api typecheck || true
+      - run: pnpm --filter @wildlama/api typecheck || true
 
   typecheck-web:
     name: Type-check Web
@@ -49,4 +50,4 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @peinau/web typecheck || true
+      - run: pnpm --filter @wildlama/web typecheck || true
