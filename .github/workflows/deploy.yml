@@ -5,15 +5,15 @@ on:
     branches: [main]
 
 env:
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: southamerica-east1
   SERVICE: peinau-api
-  IMAGE: gcr.io/${{ secrets.GCP_PROJECT_ID }}/peinau-api
 
 jobs:
   deploy-api:
     name: Deploy API to Cloud Run
     runs-on: ubuntu-latest
+    # Skip if GCP secrets are not configured yet
+    if: ${{ secrets.GCP_SA_KEY != '' && secrets.GCP_PROJECT_ID != '' }}
     permissions:
       contents: read
       id-token: write
@@ -32,12 +32,16 @@ jobs:
         run: gcloud auth configure-docker --quiet
 
       - name: Build & push image
+        env:
+          IMAGE: gcr.io/${{ secrets.GCP_PROJECT_ID }}/peinau-api
         run: |
           docker build -f apps/api/Dockerfile -t $IMAGE:${{ github.sha }} -t $IMAGE:latest .
           docker push $IMAGE:${{ github.sha }}
           docker push $IMAGE:latest
 
       - name: Deploy to Cloud Run
+        env:
+          IMAGE: gcr.io/${{ secrets.GCP_PROJECT_ID }}/peinau-api
         run: |
           gcloud run deploy $SERVICE \
             --image $IMAGE:${{ github.sha }} \
@@ -45,7 +49,7 @@ jobs:
             --platform managed \
             --allow-unauthenticated \
             --set-env-vars="NODE_ENV=production" \
-            --set-secrets="SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,UPSTASH_REDIS_REST_URL=UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest,QSTASH_TOKEN=QSTASH_TOKEN:latest,QSTASH_CURRENT_SIGNING_KEY=QSTASH_CURRENT_SIGNING_KEY:latest,QSTASH_NEXT_SIGNING_KEY=QSTASH_NEXT_SIGNING_KEY:latest,SII_API_URL=SII_API_URL:latest,SII_API_KEY=SII_API_KEY:latest,FRONTEND_URL=FRONTEND_URL:latest" \
+            --set-secrets="SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,DATABASE_URL=DATABASE_URL:latest,UPSTASH_REDIS_REST_URL=UPSTASH_REDIS_REST_URL:latest,UPSTASH_REDIS_REST_TOKEN=UPSTASH_REDIS_REST_TOKEN:latest,QSTASH_TOKEN=QSTASH_TOKEN:latest,QSTASH_CURRENT_SIGNING_KEY=QSTASH_CURRENT_SIGNING_KEY:latest,QSTASH_NEXT_SIGNING_KEY=QSTASH_NEXT_SIGNING_KEY:latest,SII_API_URL=SII_API_URL:latest,SII_API_KEY=SII_API_KEY:latest,FRONTEND_URL=FRONTEND_URL:latest" \
             --min-instances 0 \
             --max-instances 10 \
             --memory 512Mi \
@@ -55,6 +59,8 @@ jobs:
   deploy-web:
     name: Deploy Web to Vercel
     runs-on: ubuntu-latest
+    # Skip if Vercel secrets are not configured yet
+    if: ${{ secrets.VERCEL_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
 
