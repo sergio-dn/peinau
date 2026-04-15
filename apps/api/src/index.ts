@@ -16,7 +16,7 @@ import reportRoutes from './modules/reports/reports.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import attachmentRoutes from './modules/attachments/attachment.routes.js';
 import usersRoutes from './modules/users/users.routes.js';
-import { startSiiSyncWorker, scheduleSiiSync } from './jobs/queue.js';
+import jobsRoutes from './modules/jobs/jobs.routes.js';
 
 const app = express();
 
@@ -42,6 +42,7 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', attachmentRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/jobs', jobsRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
@@ -52,20 +53,6 @@ app.use(errorHandler);
 // Start server
 app.listen(env.PORT, () => {
   console.log(`API server running on http://localhost:${env.PORT}`);
-
-  // Start background workers only if a real Redis is configured
-  const redisUrl = process.env.REDIS_URL || '';
-  if (redisUrl && !redisUrl.includes('localhost') && !redisUrl.includes('127.0.0.1')) {
-    try {
-      startSiiSyncWorker();
-      scheduleSiiSync().catch(err => console.warn('[SII Sync] Schedule failed:', err.message));
-      console.log('[Workers] SII Sync worker started');
-    } catch (err: any) {
-      console.warn('[Workers] Skipped:', err.message);
-    }
-  } else {
-    console.log('[Workers] Skipped – no external Redis configured');
-  }
 });
 
 export default app;
