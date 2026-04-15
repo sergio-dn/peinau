@@ -1,35 +1,34 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import type { Session, User } from '@supabase/supabase-js';
 
-interface User {
+interface UserProfile {
   id: string;
   email: string;
   name: string;
   roles: string[];
+  companyId: string;
 }
 
 interface AuthState {
-  accessToken: string | null;
-  user: User | null;
+  session: Session | null;
+  user: UserProfile | null;
   isAuthenticated: boolean;
-  setAuth: (token: string, user: User) => void;
-  setAccessToken: (token: string) => void;
+  isLoading: boolean;
+  setSession: (session: Session | null) => void;
+  setUser: (user: UserProfile | null) => void;
+  setLoading: (loading: boolean) => void;
   logout: () => void;
 }
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      accessToken: null,
-      user: null,
-      isAuthenticated: false,
-      setAuth: (accessToken, user) => set({ accessToken, user, isAuthenticated: true }),
-      setAccessToken: (accessToken) => set({ accessToken }),
-      logout: () => set({ accessToken: null, user: null, isAuthenticated: false }),
-    }),
-    {
-      name: 'wildlama-auth',
-      partialize: (state) => ({ user: state.user }),
-    }
-  )
-);
+export const useAuthStore = create<AuthState>((set) => ({
+  session: null,
+  user: null,
+  isAuthenticated: false,
+  isLoading: true,
+  setSession: (session) =>
+    set({ session, isAuthenticated: !!session }),
+  setUser: (user) => set({ user }),
+  setLoading: (isLoading) => set({ isLoading }),
+  logout: () =>
+    set({ session: null, user: null, isAuthenticated: false, isLoading: false }),
+}));
