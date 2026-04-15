@@ -149,7 +149,7 @@ export const invoices = pgTable('invoices', {
   companyId: uuid('company_id').notNull().references(() => companies.id),
   supplierId: uuid('supplier_id').references(() => suppliers.id),
   tipoDte: smallint('tipo_dte').notNull(),
-  folio: integer('folio').notNull(),
+  folio: bigint('folio', { mode: 'number' }).notNull(),
   fechaEmision: date('fecha_emision').notNull(),
   fechaRecepcionSii: timestamp('fecha_recepcion_sii'),
   rutEmisor: varchar('rut_emisor', { length: 20 }).notNull(),

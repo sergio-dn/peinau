@@ -91,12 +91,22 @@ function parseFechaRecepcion(raw: string): Date {
   return new Date(raw);
 }
 
+/**
+ * Returns null for documents that should be skipped (tipo_doc=0 or folio=0).
+ * These are corrupted entries that the SII API sometimes returns.
+ */
 export function mapApiInvoiceToUpsert(item: Record<string, any>) {
   const tipoDte = Number(item.tipo_doc ?? 0);
   const folio = Number(item.folio ?? 0);
+
+  // Skip invalid/corrupted documents
+  if (tipoDte === 0 || folio === 0) return null;
   const fechaEmision = normalizeFecha(item.fecha_emision ?? '');
-  const rutEmisor = item.rut_contraparte && item.dv_contraparte
-    ? `${item.rut_contraparte}-${item.dv_contraparte}`
+  // SII sometimes sends rut_contraparte as an integer without DV
+  const rawRut = item.rut_contraparte != null ? String(item.rut_contraparte) : '';
+  const rawDv  = item.dv_contraparte  != null ? String(item.dv_contraparte)  : '';
+  const rutEmisor = rawRut
+    ? rawDv ? `${rawRut}-${rawDv}` : rawRut
     : '';
   const razonSocialEmisor = item.razon_social ?? '';
   const montoExento = Number(item.monto_exento ?? 0);

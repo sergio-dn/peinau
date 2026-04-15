@@ -73,6 +73,7 @@ export class SiiSyncService {
           for (const item of compras) {
             try {
               const data = mapApiInvoiceToUpsert(item);
+              if (!data) continue; // skip corrupted entries (tipo_doc=0 or folio=0)
               const result = await invoiceService.upsertFromSii(companyId, data);
               if (result.isNew) newCount++;
             } catch (err) {
