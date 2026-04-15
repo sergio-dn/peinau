@@ -5,6 +5,42 @@ export default {
   theme: {
     extend: {
       colors: {
+        brand: {
+          50:  '#eff6ff',
+          100: '#dbeafe',
+          200: '#bfdbfe',
+          300: '#93c5fd',
+          400: '#60a5fa',
+          500: '#3b82f6',
+          600: '#2563eb',  // primary
+          700: '#1d4ed8',
+          800: '#1e40af',
+          900: '#1e3a8a',
+        },
+        sidebar: {
+          bg:     '#0F172A',
+          hover:  '#1E293B',
+          active: '#2563EB',
+          text:   '#94A3B8',
+          'text-active': '#F8FAFC',
+        },
+        status: {
+          'success-bg':   '#F0FDF4',
+          'success-text': '#16A34A',
+          'success-border':'#BBF7D0',
+          'warning-bg':   '#FFFBEB',
+          'warning-text': '#D97706',
+          'warning-border':'#FDE68A',
+          'danger-bg':    '#FEF2F2',
+          'danger-text':  '#DC2626',
+          'danger-border':'#FECACA',
+          'info-bg':      '#EFF6FF',
+          'info-text':    '#2563EB',
+          'info-border':  '#BFDBFE',
+          'pending-bg':   '#F8FAFC',
+          'pending-text': '#64748B',
+          'pending-border':'#E2E8F0',
+        },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
@@ -58,6 +94,12 @@ export default {
       },
       animation: {
         'fade-in': 'fade-in 0.2s ease-out',
+      },
+      fontFamily: {
+        sans: ['Inter', 'system-ui', 'sans-serif'],
+      },
+      spacing: {
+        sidebar: '240px',
       },
     },
   },

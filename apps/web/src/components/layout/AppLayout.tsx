@@ -1,3 +1,7 @@
+// NOTE: AppShell is the new canonical layout component (see AppShell.tsx).
+// AppLayout is kept for backwards compatibility with existing route files.
+export { AppShell as AppShell } from './AppShell';
+
 import { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuthStore } from '@/stores/auth-store';
