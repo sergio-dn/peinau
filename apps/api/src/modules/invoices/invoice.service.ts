@@ -389,6 +389,74 @@ export class InvoiceService {
     return { success: true };
   }
 
+  async split(invoiceId: string, lines: Array<{ costCenterId: string; accountCode: string; monto: number }>) {
+    const invoice = await db.query.invoices.findFirst({
+      where: eq(invoices.id, invoiceId),
+    });
+
+    if (!invoice) {
+      throw Object.assign(new Error('Invoice not found'), { status: 404 });
+    }
+
+    // Validate that sum of monto equals montoNeto (±1 peso tolerance)
+    const totalMonto = lines.reduce((sum, l) => sum + l.monto, 0);
+    if (Math.abs(totalMonto - Number(invoice.montoNeto)) > 1) {
+      throw Object.assign(
+        new Error(`La suma de los montos (${totalMonto}) no coincide con el monto neto de la factura (${invoice.montoNeto})`),
+        { status: 400 }
+      );
+    }
+
+    // Resolve accountIds from accountCodes
+    const resolvedLines = await Promise.all(
+      lines.map(async (line, index) => {
+        let accountId: string | null = null;
+        if (line.accountCode) {
+          const account = await db.query.chartOfAccounts.findFirst({
+            where: and(
+              eq(chartOfAccounts.companyId, invoice.companyId),
+              eq(chartOfAccounts.code, line.accountCode),
+            ),
+          });
+          accountId = account?.id ?? null;
+        }
+        return {
+          lineNumber: index + 1,
+          costCenterId: line.costCenterId || null,
+          accountId,
+          montoItem: line.monto,
+          nombreItem: `Distribución de costos ${index + 1}`,
+        };
+      })
+    );
+
+    // Perform the split in a transaction
+    await db.transaction(async (tx) => {
+      // Delete existing lines
+      await tx.delete(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
+
+      // Insert new lines
+      await tx.insert(invoiceLines).values(
+        resolvedLines.map((line) => ({
+          invoiceId,
+          lineNumber: line.lineNumber,
+          nombreItem: line.nombreItem,
+          montoItem: line.montoItem,
+          costCenterId: line.costCenterId,
+          accountId: line.accountId,
+        }))
+      );
+
+      // Update invoice with the costCenterId of the first line
+      await tx.update(invoices)
+        .set({ costCenterId: resolvedLines[0].costCenterId, updatedAt: new Date() })
+        .where(eq(invoices.id, invoiceId));
+    });
+
+    // Return the updated invoice with lines
+    return this.getById(invoiceId);
+  }
+
   async getCostCenters(companyId: string) {
     return db.select().from(costCenters).where(eq(costCenters.companyId, companyId));
   }

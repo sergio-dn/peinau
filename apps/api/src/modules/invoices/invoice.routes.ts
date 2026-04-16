@@ -57,4 +57,11 @@ router.put('/:id/categorize', requireRole('contabilidad', 'admin'), (req, res, n
     .catch(next);
 });
 
+// Split
+router.post('/:id/split', requireRole('contabilidad', 'admin'), (req, res, next) => {
+  invoiceService.split(req.params.id, req.body.lines)
+    .then((data) => res.json(data))
+    .catch(next);
+});
+
 export default router;

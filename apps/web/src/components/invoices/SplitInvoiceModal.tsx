@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/client';
 import {
   Dialog,
@@ -44,8 +44,24 @@ function newLine(): SplitLine {
 
 export function SplitInvoiceModal({ invoice, isOpen, onClose }: SplitInvoiceModalProps) {
   const montoNeto = Number(invoice.montoNeto);
+  const queryClient = useQueryClient();
 
   const [lines, setLines] = useState<SplitLine[]>([newLine(), newLine()]);
+
+  const splitMutation = useMutation({
+    mutationFn: async (splitLines: SplitLine[]) => {
+      const { data } = await apiClient.post(`/invoices/${invoice.id}/split`, { lines: splitLines });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices', invoice.id] });
+      toast.success('Factura dividida correctamente');
+      onClose();
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.message ?? 'Error al dividir factura');
+    },
+  });
 
   const { data: costCenters = [] } = useQuery({
     queryKey: ['invoices-meta-cost-centers'],
@@ -84,7 +100,7 @@ export function SplitInvoiceModal({ invoice, isOpen, onClose }: SplitInvoiceModa
   };
 
   const handleSave = () => {
-    toast.info('Funcionalidad en desarrollo');
+    splitMutation.mutate(lines);
   };
 
   return (
@@ -206,8 +222,8 @@ export function SplitInvoiceModal({ invoice, isOpen, onClose }: SplitInvoiceModa
           <Button variant="outline" onClick={onClose}>
             Cancelar
           </Button>
-          <Button onClick={handleSave} disabled={!totalOk}>
-            Guardar distribución
+          <Button onClick={handleSave} disabled={!totalOk || splitMutation.isPending}>
+            {splitMutation.isPending ? 'Guardando...' : 'Guardar distribución'}
           </Button>
         </DialogFooter>
       </DialogContent>
