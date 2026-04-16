@@ -16,10 +16,23 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
-// Handle 401 responses
+// Handle responses
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
+    const config = error.config as any;
+
+    // Retry on 503 / network error (Render free tier cold start ~30s)
+    const retries = config._retries ?? 0;
+    const isWakeupError = error.response?.status === 503
+      || !error.response  // network/CORS error from sleeping service
+    if (isWakeupError && retries < 3) {
+      config._retries = retries + 1;
+      const delay = [5000, 15000, 30000][retries];
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return apiClient(config);
+    }
+
     if (error.response?.status === 401) {
       useAuthStore.getState().logout();
       window.location.href = '/login';
