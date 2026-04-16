@@ -6,10 +6,20 @@ import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { toast } from 'sonner';
-import { Users, Shield, Plus, Settings, Key, Bug } from 'lucide-react';
+import { Users, Shield, Settings, Key, Bug, Clock, Copy, CheckCircle } from 'lucide-react';
 
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState<'users' | 'settings'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'pending' | 'settings'>('users');
+
+  const { data: pendingUsers } = useQuery({
+    queryKey: ['admin', 'users', 'pending'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/admin/users/pending');
+      return data as any[];
+    },
+  });
+
+  const pendingCount = pendingUsers?.length ?? 0;
 
   return (
     <div className="space-y-4">
@@ -28,6 +38,22 @@ export default function AdminPage() {
           Usuarios
         </button>
         <button
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1 ${
+            activeTab === 'pending'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+          onClick={() => setActiveTab('pending')}
+        >
+          <Clock className="w-4 h-4 inline mr-1" />
+          Pendientes
+          {pendingCount > 0 && (
+            <span className="ml-1 px-1.5 py-0.5 text-xs bg-amber-100 text-amber-700 rounded-full font-semibold">
+              {pendingCount}
+            </span>
+          )}
+        </button>
+        <button
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'settings'
               ? 'border-primary text-primary'
@@ -40,13 +66,16 @@ export default function AdminPage() {
         </button>
       </div>
 
-      {activeTab === 'users' ? <UsersTab /> : <SettingsTab />}
+      {activeTab === 'users' && <UsersTab />}
+      {activeTab === 'pending' && <PendingTab />}
+      {activeTab === 'settings' && <SettingsTab />}
     </div>
   );
 }
 
 function UsersTab() {
   const queryClient = useQueryClient();
+  const [copied, setCopied] = useState(false);
 
   const { data: users, isLoading } = useQuery({
     queryKey: ['admin', 'users'],
@@ -54,28 +83,6 @@ function UsersTab() {
       const { data } = await apiClient.get('/admin/users');
       return data;
     },
-  });
-
-  const [showForm, setShowForm] = useState(false);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
-
-  const AVAILABLE_ROLES = ['admin', 'contabilidad', 'aprobador', 'operador', 'visualizador'];
-
-  const createUser = useMutation({
-    mutationFn: async (user: { name: string; email: string; password: string; roles: string[] }) => {
-      const { data } = await apiClient.post('/admin/users', user);
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
-      toast.success('Usuario creado');
-      setShowForm(false);
-      resetForm();
-    },
-    onError: () => toast.error('Error al crear usuario'),
   });
 
   const toggleUserActive = useMutation({
@@ -90,161 +97,220 @@ function UsersTab() {
     onError: () => toast.error('Error al actualizar usuario'),
   });
 
-  const resetForm = () => {
-    setName('');
-    setEmail('');
-    setPassword('');
-    setSelectedRoles([]);
+  const appUrl = window.location.origin;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(appUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
-  const handleCreate = () => {
-    if (!name.trim() || !email.trim() || !password.trim()) {
-      toast.error('Todos los campos son obligatorios');
-      return;
-    }
-    if (selectedRoles.length === 0) {
-      toast.error('Debe seleccionar al menos un rol');
-      return;
-    }
-    createUser.mutate({ name, email, password, roles: selectedRoles });
-  };
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Invitar usuarios</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-3">
+            Comparte este enlace. Los nuevos usuarios se registraran automaticamente con su cuenta Google y quedaran pendientes de aprobacion.
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 px-3 py-2 bg-muted rounded text-sm font-mono truncate">{appUrl}</code>
+            <Button size="sm" variant="outline" onClick={handleCopy}>
+              {copied ? <CheckCircle className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+              {copied ? 'Copiado' : 'Copiar'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
-  const toggleRole = (role: string) => {
-    setSelectedRoles((prev) =>
-      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
-    );
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Usuarios del Sistema</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">Cargando...</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-3 px-2 font-medium">Nombre</th>
+                    <th className="text-left py-3 px-2 font-medium">Email</th>
+                    <th className="text-left py-3 px-2 font-medium">Roles</th>
+                    <th className="text-left py-3 px-2 font-medium">Estado</th>
+                    <th className="text-left py-3 px-2 font-medium">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users?.map((user: any) => (
+                    <tr key={user.id} className="border-b hover:bg-muted/50">
+                      <td className="py-3 px-2 font-medium">{user.name}</td>
+                      <td className="py-3 px-2">{user.email}</td>
+                      <td className="py-3 px-2">
+                        <div className="flex flex-wrap gap-1">
+                          {user.roles?.map((role: string) => (
+                            <Badge key={role} variant="outline" className="text-xs">
+                              <Shield className="w-3 h-3 mr-1" />
+                              {role}
+                            </Badge>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-3 px-2">
+                        <Badge variant={user.isActive !== false ? 'success' : 'secondary'}>
+                          {user.isActive !== false ? 'Activo' : 'Inactivo'}
+                        </Badge>
+                      </td>
+                      <td className="py-3 px-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            toggleUserActive.mutate({
+                              userId: user.id,
+                              isActive: user.isActive === false,
+                            })
+                          }
+                          disabled={toggleUserActive.isPending}
+                        >
+                          {user.isActive !== false ? 'Desactivar' : 'Activar'}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                  {(!users || users.length === 0) && (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-muted-foreground">
+                        No hay usuarios registrados
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+const AVAILABLE_ROLES = ['admin', 'contabilidad', 'aprobador', 'visualizador', 'tesoreria', 'jefatura', 'cfo'];
+
+function PendingTab() {
+  const queryClient = useQueryClient();
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [selectedRoles, setSelectedRoles] = useState<Record<string, string[]>>({});
+
+  const { data: pendingUsers, isLoading } = useQuery({
+    queryKey: ['admin', 'users', 'pending'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/admin/users/pending');
+      return data as any[];
+    },
+  });
+
+  const approveUser = useMutation({
+    mutationFn: async ({ userId, roles }: { userId: string; roles: string[] }) => {
+      const { data } = await apiClient.put(`/admin/users/${userId}/approve`, { roles });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users', 'pending'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      toast.success('Usuario aprobado');
+      setApprovingId(null);
+    },
+    onError: () => toast.error('Error al aprobar usuario'),
+  });
+
+  const toggleRole = (userId: string, role: string) => {
+    setSelectedRoles((prev) => {
+      const current = prev[userId] ?? [];
+      return {
+        ...prev,
+        [userId]: current.includes(role) ? current.filter((r) => r !== role) : [...current, role],
+      };
+    });
   };
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-lg">Usuarios del Sistema</CardTitle>
-        <Button size="sm" onClick={() => setShowForm(!showForm)}>
-          <Plus className="w-4 h-4 mr-1" />
-          Nuevo Usuario
-        </Button>
+      <CardHeader>
+        <CardTitle className="text-lg">Usuarios Pendientes de Aprobacion</CardTitle>
       </CardHeader>
       <CardContent>
-        {showForm && (
-          <div className="mb-6 p-4 border rounded-lg bg-muted/30 space-y-3">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div>
-                <label className="text-sm font-medium">Nombre</label>
-                <Input
-                  placeholder="Juan Perez"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Email</label>
-                <Input
-                  type="email"
-                  placeholder="juan@wildlama.cl"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium">Contrasena</label>
-                <Input
-                  type="password"
-                  placeholder="********"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-2 block">Roles</label>
-              <div className="flex flex-wrap gap-2">
-                {AVAILABLE_ROLES.map((role) => (
-                  <button
-                    key={role}
-                    type="button"
-                    onClick={() => toggleRole(role)}
-                    className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                      selectedRoles.includes(role)
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'bg-background text-muted-foreground border-input hover:bg-accent'
-                    }`}
-                  >
-                    {role}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={handleCreate} disabled={createUser.isPending}>
-                Crear Usuario
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => { setShowForm(false); resetForm(); }}>
-                Cancelar
-              </Button>
-            </div>
-          </div>
-        )}
-
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground">Cargando...</div>
+        ) : !pendingUsers || pendingUsers.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">
+            <Clock className="w-10 h-10 mx-auto mb-3 opacity-30" />
+            <p className="text-sm">No hay usuarios pendientes de aprobacion</p>
+          </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-3 px-2 font-medium">Nombre</th>
-                  <th className="text-left py-3 px-2 font-medium">Email</th>
-                  <th className="text-left py-3 px-2 font-medium">Roles</th>
-                  <th className="text-left py-3 px-2 font-medium">Estado</th>
-                  <th className="text-left py-3 px-2 font-medium">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users?.map((user: any) => (
-                  <tr key={user.id} className="border-b hover:bg-muted/50">
-                    <td className="py-3 px-2 font-medium">{user.name}</td>
-                    <td className="py-3 px-2">{user.email}</td>
-                    <td className="py-3 px-2">
-                      <div className="flex flex-wrap gap-1">
-                        {user.roles?.map((role: string) => (
-                          <Badge key={role} variant="outline" className="text-xs">
-                            <Shield className="w-3 h-3 mr-1" />
-                            {role}
-                          </Badge>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="py-3 px-2">
-                      <Badge variant={user.isActive !== false ? 'success' : 'secondary'}>
-                        {user.isActive !== false ? 'Activo' : 'Inactivo'}
-                      </Badge>
-                    </td>
-                    <td className="py-3 px-2">
+          <div className="space-y-4">
+            {pendingUsers.map((user: any) => (
+              <div key={user.id} className="border rounded-lg p-4 space-y-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-medium text-sm">{user.name}</p>
+                    <p className="text-xs text-muted-foreground">{user.email}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Registrado: {new Date(user.createdAt).toLocaleString('es-CL')}
+                    </p>
+                  </div>
+                  <Badge variant="warning" className="text-xs">Pendiente</Badge>
+                </div>
+
+                {approvingId === user.id ? (
+                  <div className="space-y-3 pt-2 border-t">
+                    <p className="text-xs font-medium text-muted-foreground">Selecciona roles para este usuario:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {AVAILABLE_ROLES.map((role) => (
+                        <button
+                          key={role}
+                          type="button"
+                          onClick={() => toggleRole(user.id, role)}
+                          className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                            (selectedRoles[user.id] ?? []).includes(role)
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-background text-muted-foreground border-input hover:bg-accent'
+                          }`}
+                        >
+                          {role}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
                       <Button
-                        variant="ghost"
                         size="sm"
-                        onClick={() =>
-                          toggleUserActive.mutate({
-                            userId: user.id,
-                            isActive: user.isActive === false,
-                          })
-                        }
-                        disabled={toggleUserActive.isPending}
+                        onClick={() => approveUser.mutate({ userId: user.id, roles: selectedRoles[user.id] ?? [] })}
+                        disabled={approveUser.isPending || (selectedRoles[user.id] ?? []).length === 0}
                       >
-                        {user.isActive !== false ? 'Desactivar' : 'Activar'}
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Confirmar aprobacion
                       </Button>
-                    </td>
-                  </tr>
-                ))}
-                {(!users || users.length === 0) && (
-                  <tr>
-                    <td colSpan={5} className="py-8 text-center text-muted-foreground">
-                      No hay usuarios registrados
-                    </td>
-                  </tr>
+                      <Button size="sm" variant="outline" onClick={() => setApprovingId(null)}>
+                        Cancelar
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={() => setApprovingId(user.id)}
+                    className="w-full sm:w-auto"
+                  >
+                    <CheckCircle className="w-3 h-3 mr-1" />
+                    Aprobar
+                  </Button>
                 )}
-              </tbody>
-            </table>
+              </div>
+            ))}
           </div>
         )}
       </CardContent>

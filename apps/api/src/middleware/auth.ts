@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { supabaseAdmin } from '../config/supabase.js';
 import { db } from '../config/database.js';
-import { users, userRoles } from '../db/schema.js';
+import { users, userRoles, companies } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 export interface AuthPayload {
@@ -54,8 +54,30 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       }
     }
 
-    if (!dbUser || !dbUser.isActive) {
-      return res.status(403).json({ error: 'User not found or inactive' });
+    if (!dbUser) {
+      // Auto-create pending user (first Google login)
+      const firstCompany = await db.query.companies.findFirst();
+      if (!firstCompany) {
+        return res.status(403).json({ error: 'No company configured' });
+      }
+      await db.insert(users).values({
+        companyId: firstCompany.id,
+        email: supabaseUser.email!,
+        passwordHash: '',
+        name: supabaseUser.user_metadata?.full_name ?? supabaseUser.email!,
+        supabaseAuthId: supabaseUser.id,
+        status: 'pending',
+        isActive: false,
+      });
+      return res.status(403).json({ error: 'PENDING_APPROVAL', message: 'Tu cuenta está pendiente de aprobación por un administrador.' });
+    }
+
+    if (dbUser.status === 'pending') {
+      return res.status(403).json({ error: 'PENDING_APPROVAL', message: 'Tu cuenta está pendiente de aprobación.' });
+    }
+
+    if (!dbUser.isActive || dbUser.status === 'inactive') {
+      return res.status(403).json({ error: 'User inactive' });
     }
 
     req.user = {

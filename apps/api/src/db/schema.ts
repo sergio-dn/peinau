@@ -77,6 +77,7 @@ export const users = pgTable('users', {
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   isActive: boolean('is_active').default(true).notNull(),
+  status: text('status').default('active').notNull(), // 'pending' | 'active' | 'inactive'
   supabaseAuthId: text('supabase_auth_id').unique(),
   avatarUrl: text('avatar_url'),
   phone: text('phone'),

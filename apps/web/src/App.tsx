@@ -15,11 +15,16 @@ import AccountingPage from '@/pages/AccountingPage';
 import PaymentBatchListPage from '@/pages/PaymentBatchListPage';
 import ReportsPage from '@/pages/ReportsPage';
 import AdminPage from '@/pages/AdminPage';
+import PendingApprovalPage from '@/pages/PendingApprovalPage';
 
 const PaymentPriorityPage = lazy(() => import('@/pages/PaymentPriorityPage'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuthStore((s) => ({ isAuthenticated: s.isAuthenticated, isLoading: s.isLoading }));
+  const { isAuthenticated, isLoading, isPending } = useAuthStore((s) => ({
+    isAuthenticated: s.isAuthenticated,
+    isLoading: s.isLoading,
+    isPending: s.isPending,
+  }));
   if (isLoading) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
       <svg className="animate-spin h-8 w-8 text-blue-600" fill="none" viewBox="0 0 24 24">
@@ -28,12 +33,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       </svg>
     </div>
   );
+  if (isPending) return <PendingApprovalPage />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 export default function App() {
-  const { setSession, setUser, setLoading } = useAuthStore();
+  const { setSession, setUser, setLoading, setIsPending } = useAuthStore();
 
   useEffect(() => {
     (async () => {
@@ -43,8 +49,13 @@ export default function App() {
         try {
           const { data } = await api.get('/api/auth/me');
           setUser(data.user ?? data);
-        } catch (e) {
-          console.warn('[App] Profile sync failed:', e);
+        } catch (e: any) {
+          if (e?.response?.status === 403 && e?.response?.data?.error === 'PENDING_APPROVAL') {
+            setUser(null);
+            setIsPending(true);
+          } else {
+            console.warn('[App] Profile sync failed:', e);
+          }
         }
       }
       setLoading(false);
@@ -55,14 +66,21 @@ export default function App() {
       if (event === 'SIGNED_IN' && session) {
         api.get('/api/auth/me').then(({ data }) => {
           setUser(data.user ?? data);
-        }).catch(() => {});
+          setIsPending(false);
+        }).catch((e: any) => {
+          if (e?.response?.status === 403 && e?.response?.data?.error === 'PENDING_APPROVAL') {
+            setUser(null);
+            setIsPending(true);
+          }
+        });
       } else if (!session) {
         setUser(null);
+        setIsPending(false);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [setSession, setUser, setLoading]);
+  }, [setSession, setUser, setLoading, setIsPending]);
 
   return (
     <Routes>

@@ -14,9 +14,11 @@ interface AuthState {
   user: UserProfile | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isPending: boolean;
   setSession: (session: Session | null) => void;
   setUser: (user: UserProfile | null) => void;
   setLoading: (loading: boolean) => void;
+  setIsPending: (v: boolean) => void;
   logout: () => void;
 }
 
@@ -25,10 +27,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
+  isPending: false,
   setSession: (session) =>
     set({ session, isAuthenticated: !!session }),
   setUser: (user) => set({ user }),
   setLoading: (isLoading) => set({ isLoading }),
+  setIsPending: (isPending) => set({ isPending }),
   logout: () =>
-    set({ session: null, user: null, isAuthenticated: false, isLoading: false }),
+    set({ session: null, user: null, isAuthenticated: false, isLoading: false, isPending: false }),
 }));
