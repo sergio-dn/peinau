@@ -39,6 +39,24 @@ export class ReportsController {
     const stats = await reportsService.getDashboardStats(req.user!.companyId);
     res.json(stats);
   }
+
+  async monthlyVolume(req: Request, res: Response) {
+    const year = Number(req.query.year) || new Date().getFullYear();
+    const data = await reportsService.monthlyVolume(req.user!.companyId, year);
+    res.json(data);
+  }
+
+  async supplierRanking(req: Request, res: Response) {
+    const { fechaDesde, fechaHasta, limit } = req.query as Record<string, string>;
+    const data = await reportsService.supplierRanking(req.user!.companyId, fechaDesde, fechaHasta, limit ? Number(limit) : 10);
+    res.json(data);
+  }
+
+  async taxSummary(req: Request, res: Response) {
+    const { fechaDesde, fechaHasta } = req.query as Record<string, string>;
+    const data = await reportsService.taxSummary(req.user!.companyId, fechaDesde, fechaHasta);
+    res.json(data);
+  }
 }
 
 export const reportsController = new ReportsController();

@@ -191,6 +191,83 @@ export class ReportsService {
 
     return result;
   }
+
+  async monthlyVolume(companyId: string, year: number) {
+    const LABELS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+    const rows = await db.select({
+      month: sql<number>`EXTRACT(MONTH FROM ${invoices.fechaEmision})::int`,
+      count: sql<number>`count(*)`,
+      monto: sql<number>`sum(${invoices.montoTotal})`,
+    })
+      .from(invoices)
+      .where(and(
+        eq(invoices.companyId, companyId),
+        sql`EXTRACT(YEAR FROM ${invoices.fechaEmision}) = ${year}`,
+      ))
+      .groupBy(sql`EXTRACT(MONTH FROM ${invoices.fechaEmision})`)
+      .orderBy(sql`EXTRACT(MONTH FROM ${invoices.fechaEmision})`);
+
+    // Construir array completo de 12 meses (rellenar los que no tienen datos con 0)
+    const byMonth = new Map(rows.map(r => [r.month, r]));
+    return Array.from({ length: 12 }, (_, i) => {
+      const m = i + 1;
+      const row = byMonth.get(m);
+      return {
+        month: m,
+        label: LABELS[i],
+        count: Number(row?.count ?? 0),
+        monto: Number(row?.monto ?? 0),
+      };
+    });
+  }
+
+  async supplierRanking(companyId: string, fechaDesde?: string, fechaHasta?: string, limit = 10) {
+    const conditions = [eq(invoices.companyId, companyId)];
+    if (fechaDesde) conditions.push(gte(invoices.fechaEmision, fechaDesde));
+    if (fechaHasta) conditions.push(lte(invoices.fechaEmision, fechaHasta));
+
+    const rows = await db.select({
+      rut: invoices.rutEmisor,
+      nombre: invoices.razonSocialEmisor,
+      count: sql<number>`count(*)`,
+      total: sql<number>`sum(${invoices.montoTotal})`,
+    })
+      .from(invoices)
+      .where(and(...conditions))
+      .groupBy(invoices.rutEmisor, invoices.razonSocialEmisor)
+      .orderBy(desc(sql`sum(${invoices.montoTotal})`))
+      .limit(limit);
+
+    return rows.map(r => ({
+      rut: r.rut,
+      nombre: r.nombre,
+      count: Number(r.count),
+      total: Number(r.total),
+    }));
+  }
+
+  async taxSummary(companyId: string, fechaDesde?: string, fechaHasta?: string) {
+    const conditions = [eq(invoices.companyId, companyId)];
+    if (fechaDesde) conditions.push(gte(invoices.fechaEmision, fechaDesde));
+    if (fechaHasta) conditions.push(lte(invoices.fechaEmision, fechaHasta));
+
+    const [row] = await db.select({
+      montoNeto: sql<number>`sum(${invoices.montoNeto})`,
+      montoIva: sql<number>`sum(${invoices.montoIva})`,
+      montoTotal: sql<number>`sum(${invoices.montoTotal})`,
+      count: sql<number>`count(*)`,
+    })
+      .from(invoices)
+      .where(and(...conditions));
+
+    return {
+      montoNeto: Number(row?.montoNeto ?? 0),
+      montoIva: Number(row?.montoIva ?? 0),
+      montoTotal: Number(row?.montoTotal ?? 0),
+      count: Number(row?.count ?? 0),
+    };
+  }
 }
 
 export const reportsService = new ReportsService();

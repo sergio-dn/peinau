@@ -12,5 +12,8 @@ router.get('/spend-by-cost-center', (req, res, next) => reportsController.spendB
 router.get('/spend-by-account', (req, res, next) => reportsController.spendByAccount(req, res).catch(next));
 router.get('/pending-by-approver', (req, res, next) => reportsController.pendingByApprover(req, res).catch(next));
 router.get('/dashboard', (req, res, next) => reportsController.dashboard(req, res).catch(next));
+router.get('/monthly-volume', (req, res, next) => reportsController.monthlyVolume(req, res).catch(next));
+router.get('/supplier-ranking', (req, res, next) => reportsController.supplierRanking(req, res).catch(next));
+router.get('/tax-summary', (req, res, next) => reportsController.taxSummary(req, res).catch(next));
 
 export default router;
