@@ -28,7 +28,7 @@ export function InvoiceLineTable({
 
   const handleAccountChange = (lineId: string, accountId: string) => {
     updateAccounting.mutate(
-      { invoiceId, lineId, accountId: accountId || null, costCenterId: null },
+      { invoiceId, lineId, accountId: accountId === '__none__' ? null : accountId, costCenterId: null },
       {
         onSuccess: () => toast.success('Cuenta actualizada'),
         onError: () => toast.error('Error al actualizar cuenta'),
@@ -38,13 +38,21 @@ export function InvoiceLineTable({
 
   const handleCostCenterChange = (lineId: string, costCenterId: string) => {
     updateAccounting.mutate(
-      { invoiceId, lineId, accountId: null, costCenterId: costCenterId || null },
+      { invoiceId, lineId, accountId: null, costCenterId: costCenterId === '__none__' ? null : costCenterId },
       {
         onSuccess: () => toast.success('Centro de costo actualizado'),
         onError: () => toast.error('Error al actualizar centro de costo'),
       }
     );
   };
+
+  if (lines.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground py-3">
+        Sin líneas de detalle — el SII solo entrega datos de cabecera por defecto.
+      </p>
+    );
+  }
 
   return (
     <div className="overflow-x-auto">
@@ -77,7 +85,7 @@ export function InvoiceLineTable({
               <td className="px-3 py-2 text-right">{formatCLP(line.montoItem)}</td>
               <td className="px-3 py-2">
                 <Select
-                  value={line.accountId ?? ''}
+                  value={line.accountId ?? '__none__'}
                   onValueChange={(value) => handleAccountChange(line.id, value)}
                   disabled={disabled}
                 >
@@ -85,6 +93,7 @@ export function InvoiceLineTable({
                     <SelectValue placeholder="Seleccionar cuenta" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="__none__">Sin cuenta</SelectItem>
                     {accounts.map((account: any) => (
                       <SelectItem key={account.id} value={account.id}>
                         {account.code} - {account.name}
@@ -95,7 +104,7 @@ export function InvoiceLineTable({
               </td>
               <td className="px-3 py-2">
                 <Select
-                  value={line.costCenterId ?? ''}
+                  value={line.costCenterId ?? '__none__'}
                   onValueChange={(value) => handleCostCenterChange(line.id, value)}
                   disabled={disabled}
                 >
@@ -103,6 +112,7 @@ export function InvoiceLineTable({
                     <SelectValue placeholder="Seleccionar CC" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="__none__">Sin CECO</SelectItem>
                     {costCenters.map((cc: any) => (
                       <SelectItem key={cc.id} value={cc.id}>
                         {cc.code} - {cc.name}
