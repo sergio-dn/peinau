@@ -8,6 +8,7 @@ const listFiltersSchema = z.object({
   fechaDesde: z.string().optional(),
   fechaHasta: z.string().optional(),
   search: z.string().optional(),
+  tipoDte: z.coerce.number().int().optional(),
   page: z.coerce.number().min(1).optional(),
   limit: z.coerce.number().min(1).max(100).optional(),
 });
@@ -19,7 +20,7 @@ const updateAccountingSchema = z.object({
 
 export class InvoiceController {
   async list(req: Request, res: Response) {
-    const filters = listFiltersSchema.parse(req.query);
+    const { tipoDte, ...filters } = listFiltersSchema.parse(req.query);
     const result = await invoiceService.list(req.user!.companyId, filters);
     res.json(result);
   }

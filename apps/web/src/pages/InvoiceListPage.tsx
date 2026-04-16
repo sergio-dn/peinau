@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createColumnHelper } from '@tanstack/react-table';
 import { useInvoices } from '@/api/invoices';
@@ -24,6 +23,7 @@ import {
   DropdownMenuItem,
 } from '@/components/ui/DropdownMenu';
 import { formatCLP } from '@wildlama/shared';
+import { useFilterStore } from '@/stores/filter-store';
 
 function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return '-';
@@ -59,6 +59,15 @@ const STATES = [
   { value: 'en_nomina', label: 'En Nomina' },
   { value: 'pagada', label: 'Pagada' },
   { value: 'rechazada', label: 'Rechazada' },
+];
+
+const DTE_OPTIONS = [
+  { value: '', label: 'Todos los tipos' },
+  { value: '33', label: 'Factura (33)' },
+  { value: '34', label: 'Fac. Exenta (34)' },
+  { value: '46', label: 'Fac. Compra (46)' },
+  { value: '61', label: 'Nota Crédito (61)' },
+  { value: '56', label: 'Nota Débito (56)' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -131,6 +140,20 @@ const columns = [
     header: 'Estado',
     cell: (info) => <InvoiceStateBadge state={info.getValue()} />,
   }),
+  columnHelper.accessor('costCenterId', {
+    header: 'CECO',
+    cell: (info) =>
+      info.getValue() ? (
+        <span className="text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
+          Imputada
+        </span>
+      ) : (
+        <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+          Sin CECO
+        </span>
+      ),
+    size: 100,
+  }),
 ];
 
 // ---------------------------------------------------------------------------
@@ -138,36 +161,41 @@ const columns = [
 // ---------------------------------------------------------------------------
 
 export default function InvoiceListPage() {
-  const [search, setSearch] = useState('');
-  const [state, setState] = useState('');
-  const [fechaDesde, setFechaDesde] = useState('');
-  const [fechaHasta, setFechaHasta] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const debouncedSearch = useDebouncedValue(search);
+  const { invoices: filters, setInvoiceFilters, resetInvoiceFilters } = useFilterStore();
+  const debouncedSearch = useDebouncedValue(filters.search);
   const navigate = useNavigate();
 
   const { data, isLoading } = useInvoices({
     search: debouncedSearch || undefined,
-    state: state || undefined,
-    fechaDesde: fechaDesde || undefined,
-    fechaHasta: fechaHasta || undefined,
-    page,
-    limit: pageSize,
+    state: filters.state || undefined,
+    fechaDesde: filters.fechaDesde || undefined,
+    fechaHasta: filters.fechaHasta || undefined,
+    tipoDte: filters.tipoDte ? Number(filters.tipoDte) : undefined,
+    page: filters.page,
+    limit: filters.pageSize,
   });
 
   const { table, selectedRows, rowSelection, setRowSelection } = useDataTable({
     data: data?.data ?? [],
     columns,
     pageCount: data?.totalPages ?? 1,
-    defaultPageSize: pageSize,
+    defaultPageSize: filters.pageSize,
     enableRowSelection: true,
     manualPagination: true,
     onPaginationChange: (p) => {
-      setPage(p.pageIndex + 1);
-      setPageSize(p.pageSize);
+      setInvoiceFilters({ page: p.pageIndex + 1, pageSize: p.pageSize });
     },
   });
+
+  // Count invoices without CECO (sin costCenterId) from current page data
+  const sinCecoCount = (data?.data ?? []).filter(
+    (inv: any) => !inv.costCenterId
+  ).length;
+
+  // Pagination display
+  const totalItems = data?.total ?? 0;
+  const pageStart = totalItems === 0 ? 0 : (filters.page - 1) * filters.pageSize + 1;
+  const pageEnd = Math.min(filters.page * filters.pageSize, totalItems);
 
   return (
     <div className="space-y-4">
@@ -181,10 +209,9 @@ export default function InvoiceListPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar por proveedor..."
-                value={search}
+                value={filters.search}
                 onChange={(e) => {
-                  setSearch(e.target.value);
-                  setPage(1);
+                  setInvoiceFilters({ search: e.target.value, page: 1 });
                 }}
                 className="pl-10"
               />
@@ -192,10 +219,9 @@ export default function InvoiceListPage() {
 
             {/* State filter */}
             <Select
-              value={state}
+              value={filters.state}
               onValueChange={(value) => {
-                setState(value === '__all__' ? '' : value);
-                setPage(1);
+                setInvoiceFilters({ state: value === '__all__' ? '' : value, page: 1 });
               }}
             >
               <SelectTrigger className="w-[200px]">
@@ -210,31 +236,69 @@ export default function InvoiceListPage() {
               </SelectContent>
             </Select>
 
+            {/* Tipo DTE filter */}
+            <Select
+              value={filters.tipoDte}
+              onValueChange={(value) => {
+                setInvoiceFilters({ tipoDte: value === '__all__' ? '' : value, page: 1 });
+              }}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Todos los tipos" />
+              </SelectTrigger>
+              <SelectContent>
+                {DTE_OPTIONS.map((d) => (
+                  <SelectItem key={d.value || '__all__'} value={d.value || '__all__'}>
+                    {d.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             {/* Date range */}
             <Input
               type="date"
-              value={fechaDesde}
+              value={filters.fechaDesde}
               onChange={(e) => {
-                setFechaDesde(e.target.value);
-                setPage(1);
+                setInvoiceFilters({ fechaDesde: e.target.value, page: 1 });
               }}
               className="w-[160px]"
               placeholder="Desde"
             />
             <Input
               type="date"
-              value={fechaHasta}
+              value={filters.fechaHasta}
               onChange={(e) => {
-                setFechaHasta(e.target.value);
-                setPage(1);
+                setInvoiceFilters({ fechaHasta: e.target.value, page: 1 });
               }}
               className="w-[160px]"
               placeholder="Hasta"
             />
+
+            {/* Reset filters */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => resetInvoiceFilters()}
+            >
+              Limpiar filtros
+            </Button>
           </div>
         </CardHeader>
 
         <CardContent>
+          {/* Banner facturas sin CECO */}
+          {(data?.total ?? 0) > 0 && sinCecoCount > 0 && (
+            <div
+              className="flex items-center gap-2 px-4 py-2 mb-4 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer hover:bg-amber-100 transition-colors"
+              onClick={() => setInvoiceFilters({ state: 'recibida', page: 1 })}
+            >
+              <span className="text-amber-700 text-sm font-medium">
+                ⚠ {sinCecoCount} facturas sin imputar en este período
+              </span>
+            </div>
+          )}
+
           {/* Bulk actions toolbar */}
           {selectedRows.length > 0 && (
             <div className="flex items-center gap-3 p-3 mb-4 bg-muted rounded-lg">
@@ -267,6 +331,13 @@ export default function InvoiceListPage() {
             isLoading={isLoading}
             totalItems={data?.total}
           />
+
+          {/* Pagination info */}
+          {totalItems > 0 && (
+            <p className="text-sm text-muted-foreground mt-3">
+              Mostrando {pageStart}–{pageEnd} de {totalItems} facturas
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>
