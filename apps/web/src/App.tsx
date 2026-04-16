@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth-store';
+import { api } from '@/lib/api';
 import { AppLayout } from '@/components/layout/AppLayout';
 import LoginPage from '@/pages/LoginPage';
 import AuthCallbackPage from '@/pages/AuthCallbackPage';
@@ -14,6 +15,8 @@ import AccountingPage from '@/pages/AccountingPage';
 import PaymentBatchListPage from '@/pages/PaymentBatchListPage';
 import ReportsPage from '@/pages/ReportsPage';
 import AdminPage from '@/pages/AdminPage';
+
+const PaymentPriorityPage = lazy(() => import('@/pages/PaymentPriorityPage'));
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuthStore((s) => ({ isAuthenticated: s.isAuthenticated, isLoading: s.isLoading }));
@@ -30,20 +33,36 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { setSession, setLoading } = useAuthStore();
+  const { setSession, setUser, setLoading } = useAuthStore();
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
+      if (session) {
+        try {
+          const { data } = await api.get('/api/auth/me');
+          setUser(data.user ?? data);
+        } catch (e) {
+          console.warn('[App] Profile sync failed:', e);
+        }
+      }
       setLoading(false);
-    });
+    })();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      if (event === 'SIGNED_IN' && session) {
+        api.get('/api/auth/me').then(({ data }) => {
+          setUser(data.user ?? data);
+        }).catch(() => {});
+      } else if (!session) {
+        setUser(null);
+      }
     });
 
     return () => subscription.unsubscribe();
-  }, [setSession, setLoading]);
+  }, [setSession, setUser, setLoading]);
 
   return (
     <Routes>
@@ -64,6 +83,7 @@ export default function App() {
                 <Route path="/payment-batches" element={<PaymentBatchListPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/admin/*" element={<AdminPage />} />
+                <Route path="/payment-priority" element={<PaymentPriorityPage />} />
               </Routes>
             </AppLayout>
           </ProtectedRoute>
