@@ -9,36 +9,31 @@ export default function AuthCallbackPage() {
   const { setSession, setUser, setLoading } = useAuthStore();
 
   useEffect(() => {
-    const handleCallback = async () => {
-      try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-
-        if (error || !session) {
-          console.error('[AuthCallback] No session:', error);
-          navigate('/login', { replace: true });
-          return;
-        }
-
+    // Use onAuthStateChange to reliably detect session after PKCE exchange
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session) {
         setSession(session);
 
-        // Sync user with our backend DB
+        // Sync user profile + roles from our backend
         try {
-          const { data: profile } = await api.get('/api/auth/me');
-          setUser(profile);
+          const { data } = await api.get('/api/auth/me');
+          setUser(data.user ?? data);
         } catch (syncErr) {
           console.warn('[AuthCallback] Profile sync failed:', syncErr);
         }
 
-        navigate('/', { replace: true });
-      } catch (err) {
-        console.error('[AuthCallback] Error:', err);
-        navigate('/login', { replace: true });
-      } finally {
         setLoading(false);
+        navigate('/', { replace: true });
+        subscription.unsubscribe();
+      } else if (event === 'INITIAL_SESSION' && !session) {
+        // No session after initial check — go back to login
+        setLoading(false);
+        navigate('/login', { replace: true });
+        subscription.unsubscribe();
       }
-    };
+    });
 
-    handleCallback();
+    return () => subscription.unsubscribe();
   }, [navigate, setSession, setUser, setLoading]);
 
   return (
