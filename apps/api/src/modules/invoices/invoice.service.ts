@@ -17,6 +17,7 @@ export class InvoiceService {
     fechaDesde?: string;
     fechaHasta?: string;
     search?: string;
+    tipoDte?: number;
     page?: number;
     limit?: number;
   }) {
@@ -37,6 +38,9 @@ export class InvoiceService {
     }
     if (filters.search) {
       conditions.push(ilike(invoices.razonSocialEmisor, `%${filters.search}%`));
+    }
+    if (filters.tipoDte) {
+      conditions.push(eq(invoices.tipoDte, filters.tipoDte));
     }
 
     const [data, countResult] = await Promise.all([

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { invoiceController } from './invoice.controller.js';
 import { invoiceService } from './invoice.service.js';
+import { searchInvoices } from './invoice.search.js';
 import { authenticateToken } from '../../middleware/auth.js';
 import { requireRole } from '../../middleware/rbac.js';
 
@@ -9,6 +10,14 @@ const router = Router();
 router.use(authenticateToken);
 
 router.get('/', (req, res, next) => invoiceController.list(req, res).catch(next));
+
+// Search — must be defined before /:id to avoid param collision
+router.get('/search', (req, res, next) => {
+  const { q = '', limit = '5' } = req.query as Record<string, string>;
+  searchInvoices(req.user!.companyId, q, Number(limit))
+    .then((data) => res.json(data))
+    .catch(next);
+});
 
 // Meta routes — must be defined before /:id to avoid param collision
 router.get('/meta/cost-centers', (req, res, next) => {

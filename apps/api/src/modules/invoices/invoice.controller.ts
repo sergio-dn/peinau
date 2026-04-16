@@ -21,7 +21,7 @@ const updateAccountingSchema = z.object({
 export class InvoiceController {
   async list(req: Request, res: Response) {
     const { tipoDte, ...filters } = listFiltersSchema.parse(req.query);
-    const result = await invoiceService.list(req.user!.companyId, filters);
+    const result = await invoiceService.list(req.user!.companyId, { ...filters, tipoDte });
     res.json(result);
   }
 
