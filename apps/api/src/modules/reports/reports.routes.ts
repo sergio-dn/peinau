@@ -11,5 +11,6 @@ router.get('/aging', (req, res, next) => reportsController.aging(req, res).catch
 router.get('/spend-by-cost-center', (req, res, next) => reportsController.spendByCostCenter(req, res).catch(next));
 router.get('/spend-by-account', (req, res, next) => reportsController.spendByAccount(req, res).catch(next));
 router.get('/pending-by-approver', (req, res, next) => reportsController.pendingByApprover(req, res).catch(next));
+router.get('/dashboard', (req, res, next) => reportsController.dashboard(req, res).catch(next));
 
 export default router;

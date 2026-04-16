@@ -34,6 +34,11 @@ export class ReportsController {
     const result = await reportsService.pendingByApprover(req.user!.companyId);
     res.json(result);
   }
+
+  async dashboard(req: Request, res: Response) {
+    const stats = await reportsService.getDashboardStats(req.user!.companyId);
+    res.json(stats);
+  }
 }
 
 export const reportsController = new ReportsController();

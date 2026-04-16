@@ -1,9 +1,32 @@
 import { db } from '../../config/database.js';
-import { companies, siiSyncLogs } from '../../db/schema.js';
+import { companies, siiSyncLogs, invoices } from '../../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { invoiceService } from '../invoices/invoice.service.js';
 import { decrypt } from '../../lib/encryption.js';
 import { siiApiClient, mapApiInvoiceToUpsert } from '../../lib/sii-api-client.js';
+
+// ─── Chilean holidays (2025–2026) ────────────────────────────────────────────
+
+const FERIADOS_CL = new Set([
+  '2025-01-01','2025-04-18','2025-04-19','2025-05-01','2025-05-21',
+  '2025-06-20','2025-06-29','2025-07-16','2025-08-15','2025-09-18',
+  '2025-09-19','2025-10-12','2025-10-31','2025-11-01','2025-12-08','2025-12-25',
+  '2026-01-01','2026-04-03','2026-04-04','2026-05-01','2026-05-21',
+  '2026-06-19','2026-06-29','2026-07-16','2026-08-15','2026-09-18',
+  '2026-09-19','2026-10-12','2026-10-31','2026-11-01','2026-12-08','2026-12-25',
+]);
+
+function addBusinessDays(start: Date, days: number): Date {
+  let count = 0;
+  const d = new Date(start);
+  while (count < days) {
+    d.setDate(d.getDate() + 1);
+    const dow = d.getDay();
+    const ds = d.toISOString().slice(0, 10);
+    if (dow > 0 && dow < 6 && !FERIADOS_CL.has(ds)) count++;
+  }
+  return d;
+}
 
 function getCurrentAndPreviousPeriods(): { desde: string; hasta: string; periodos: string[] } {
   const now = new Date();
@@ -64,6 +87,7 @@ export class SiiSyncService {
       // 4. Fetch and upsert compras from each period
       let totalFound = 0;
       let newCount = 0;
+      let updatedCount = 0;
 
       for (const periodo of relevantPeriodos) {
         try {
@@ -75,7 +99,21 @@ export class SiiSyncService {
               const data = mapApiInvoiceToUpsert(item);
               if (!data) continue; // skip corrupted entries (tipo_doc=0 or folio=0)
               const result = await invoiceService.upsertFromSii(companyId, data);
-              if (result.isNew) newCount++;
+              if (result.isNew) {
+                newCount++;
+                // Calculate sii_rejection_deadline (8 business days from reception)
+                try {
+                  const fechaBase = data.fechaRecepcionSii ?? new Date();
+                  const deadline = addBusinessDays(fechaBase, 8);
+                  await db.update(invoices)
+                    .set({ siiRejectionDeadline: deadline })
+                    .where(eq(invoices.id, result.invoice.id));
+                } catch {
+                  /* siiRejectionDeadline column may not exist yet in DB */
+                }
+              } else {
+                updatedCount++;
+              }
             } catch (err) {
               console.error(`[SII Sync] Error upserting invoice from period ${periodo.codigo}:`, err);
             }
@@ -95,10 +133,20 @@ export class SiiSyncService {
           status: 'success',
           invoicesFound: totalFound,
           invoicesNew: newCount,
+          invoicesUpdated: updatedCount,
         })
         .where(eq(siiSyncLogs.id, syncLog.id));
 
-      return { invoicesFound: totalFound, invoicesNew: newCount };
+      // Track records fetched/created/updated if columns exist
+      try {
+        await db.update(siiSyncLogs).set({
+          recordsFetched: totalFound,
+          recordsCreated: newCount,
+          recordsUpdated: updatedCount,
+        } as any).where(eq(siiSyncLogs.id, syncLog.id));
+      } catch { /* columns may not exist yet */ }
+
+      return { invoicesFound: totalFound, invoicesNew: newCount, invoicesUpdated: updatedCount };
     } catch (error) {
       await db.update(siiSyncLogs)
         .set({

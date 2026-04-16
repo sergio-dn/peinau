@@ -24,12 +24,12 @@ export class SiiSyncController {
     });
   }
 
-  async getSyncLogs(req: Request, res: Response) {
+  async getSyncHistory(req: Request, res: Response) {
     const logs = await db.select()
       .from(siiSyncLogs)
       .where(eq(siiSyncLogs.companyId, req.user!.companyId))
       .orderBy(desc(siiSyncLogs.startedAt))
-      .limit(20);
+      .limit(10);
     res.json(logs);
   }
 }
