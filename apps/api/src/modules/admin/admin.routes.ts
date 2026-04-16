@@ -18,18 +18,21 @@ const router = Router();
 router.use(authenticateToken);
 router.use(requireRole('admin'));
 
+// Helper to wrap async handlers so Express 4 receives errors via next()
+const wrap = (fn: Function) => (req: any, res: any, next: any) => Promise.resolve(fn(req, res, next)).catch(next);
+
 // Settings
-router.get('/settings', getSettings);
-router.put('/settings', updateSettings);
+router.get('/settings', wrap(getSettings));
+router.put('/settings', wrap(updateSettings));
 
 // SII credentials
-router.put('/sii-credentials', updateSiiCredentials);
-router.post('/sii-test', testSiiConnection);
-router.post('/sii-debug', debugSiiQuery);
+router.put('/sii-credentials', wrap(updateSiiCredentials));
+router.post('/sii-test', wrap(testSiiConnection));
+router.post('/sii-debug', wrap(debugSiiQuery));
 
 // Users
-router.get('/users', listUsers);
-router.post('/users', createUser);
-router.put('/users/:id', updateUser);
+router.get('/users', wrap(listUsers));
+router.post('/users', wrap(createUser));
+router.put('/users/:id', wrap(updateUser));
 
 export default router;

@@ -5,6 +5,7 @@ const apiClient = axios.create({
   baseURL: `${import.meta.env.VITE_API_URL || ''}/api`,
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true,
+  timeout: 60000, // 60s — covers Render cold start max wait
 });
 
 // Add Supabase session token to requests
