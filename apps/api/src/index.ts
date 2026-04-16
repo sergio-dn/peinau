@@ -17,6 +17,7 @@ import adminRoutes from './modules/admin/admin.routes.js';
 import attachmentRoutes from './modules/attachments/attachment.routes.js';
 import usersRoutes from './modules/users/users.routes.js';
 import jobsRoutes from './modules/jobs/jobs.routes.js';
+import paymentPriorityRoutes from './modules/payment-priority/payment-priority.routes.js';
 
 const app = express();
 
@@ -46,6 +47,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api', attachmentRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/jobs', jobsRoutes);
+app.use('/api/payment-priority', paymentPriorityRoutes);
 
 // Error handler
 app.use(errorHandler);

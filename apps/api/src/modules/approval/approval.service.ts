@@ -69,6 +69,8 @@ export class ApprovalService {
       throw Object.assign(new Error('No pending approval for this user'), { status: 400 });
     }
 
+    const invoice = await db.query.invoices.findFirst({ where: eq(invoices.id, invoiceId) });
+
     await db.update(approvalSteps)
       .set({ action: 'approved', actedAt: new Date(), comment: comment || null })
       .where(eq(approvalSteps.id, pendingStep.id));
@@ -98,6 +100,8 @@ export class ApprovalService {
         await invoiceService.transition(invoiceId, 'aprobada', userId);
       }
     }
+
+    return { invoice };
   }
 
   /**
@@ -109,11 +113,15 @@ export class ApprovalService {
       throw Object.assign(new Error('No pending approval for this user'), { status: 400 });
     }
 
+    const invoice = await db.query.invoices.findFirst({ where: eq(invoices.id, invoiceId) });
+
     await db.update(approvalSteps)
       .set({ action: 'rejected', actedAt: new Date(), comment: reason })
       .where(eq(approvalSteps.id, pendingStep.id));
 
     await invoiceService.transition(invoiceId, 'rechazada', userId, reason);
+
+    return { invoice };
   }
 
   /**
@@ -145,6 +153,27 @@ export class ApprovalService {
         });
       }
     }
+  }
+
+  /**
+   * Get all invoices in 'pendiente' state for the company (approval queue)
+   */
+  async getQueue(companyId: string) {
+    return db.select({
+      id: invoices.id,
+      tipoDte: invoices.tipoDte,
+      folio: invoices.folio,
+      razonSocialEmisor: invoices.razonSocialEmisor,
+      montoTotal: invoices.montoTotal,
+      fechaEmision: invoices.fechaEmision,
+      state: invoices.state,
+      createdAt: invoices.createdAt,
+    }).from(invoices)
+      .where(and(
+        eq(invoices.companyId, companyId),
+        eq(invoices.state, 'pendiente'),
+      ))
+      .orderBy(invoices.fechaEmision);
   }
 
   /**
