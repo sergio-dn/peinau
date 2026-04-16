@@ -30,6 +30,9 @@ app.use(morgan('short'));
 app.use(express.json());
 app.use(cookieParser());
 
+// Health check (must be before other routes)
+app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/invoices', invoiceRoutes);
@@ -43,9 +46,6 @@ app.use('/api/admin', adminRoutes);
 app.use('/api', attachmentRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/jobs', jobsRoutes);
-
-// Health check
-app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
 // Error handler
 app.use(errorHandler);
