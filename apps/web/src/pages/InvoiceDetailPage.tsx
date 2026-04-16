@@ -11,19 +11,26 @@ import { InvoiceNotesSection } from '@/components/invoices/InvoiceNotesSection';
 import { InvoiceTagsSection } from '@/components/invoices/InvoiceTagsSection';
 import { AttachmentSection } from '@/components/invoices/AttachmentSection';
 import { InvoiceHistoryTimeline } from '@/components/invoices/InvoiceHistoryTimeline';
+import { InvoiceCategoryForm } from '@/components/invoices/InvoiceCategoryForm';
+import { SplitInvoiceModal } from '@/components/invoices/SplitInvoiceModal';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Avatar, AvatarFallback } from '@/components/ui/Avatar';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { formatCLP } from '@wildlama/shared';
-import { UserPlus } from 'lucide-react';
+import { useAuthStore } from '@/stores/auth-store';
+import { UserPlus, Scissors, AlertTriangle } from 'lucide-react';
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [rejectOpen, setRejectOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false);
+
+  const user = useAuthStore((s) => s.user);
+  const canCategorize = user?.roles.some((r) => ['contabilidad', 'admin'].includes(r)) ?? false;
 
   const { data: invoice, isLoading } = useInvoice(id!);
   const { data: history } = useInvoiceHistory(id!);
@@ -65,6 +72,16 @@ export default function InvoiceDetailPage() {
             </TabsList>
 
             <TabsContent value="detalle">
+              {/* Banner sin CECO */}
+              {invoice.state === 'recibida' && !(invoice.lines?.[0]?.costCenterId) && (
+                <div className="flex items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-4">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>
+                    Esta factura no tiene CECO asignado. Asígnalo para avanzar en el flujo.
+                  </span>
+                </div>
+              )}
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">Detalle de la Factura</CardTitle>
@@ -106,6 +123,33 @@ export default function InvoiceDetailPage() {
                     costCenters={costCenters || []}
                     invoiceId={id!}
                     disabled={!['recibida', 'pendiente', 'aprobada'].includes(invoice.state)}
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Sección Imputación */}
+              <Card className="mt-4">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">Imputación</CardTitle>
+                    {canCategorize && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSplitOpen(true)}
+                      >
+                        <Scissors className="mr-2 h-4 w-4" />
+                        Dividir factura
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <InvoiceCategoryForm
+                    invoiceId={id!}
+                    currentCostCenterId={invoice.lines?.[0]?.costCenterId ?? null}
+                    currentAccountCode={invoice.lines?.[0]?.account?.code ?? null}
+                    companyId={invoice.companyId}
                   />
                 </CardContent>
               </Card>
@@ -234,6 +278,11 @@ export default function InvoiceDetailPage() {
       {/* Dialogs */}
       <RejectDialog open={rejectOpen} onOpenChange={setRejectOpen} invoiceId={id!} />
       <AssignDialog open={assignOpen} onOpenChange={setAssignOpen} invoiceId={id!} />
+      <SplitInvoiceModal
+        invoice={invoice}
+        isOpen={splitOpen}
+        onClose={() => setSplitOpen(false)}
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { eq, and, desc, sql, between, ilike } from 'drizzle-orm';
 import { db } from '../../config/database.js';
-import { invoices, invoiceLines, invoiceStateHistory, suppliers, invoiceTags, invoiceAssignments, users, userRoles } from '../../db/schema.js';
+import { invoices, invoiceLines, invoiceStateHistory, suppliers, invoiceTags, invoiceAssignments, users, userRoles, costCenters, chartOfAccounts } from '../../db/schema.js';
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   recibida: ['pendiente', 'rechazada'],
@@ -332,6 +332,65 @@ export class InvoiceService {
       result.push({ ...u, roles: roles.map(r => r.role) });
     }
     return result;
+  }
+
+  async categorize(invoiceId: string, data: {
+    costCenterId?: string | null;
+    accountCode?: string | null;
+    businessUnit?: string | null;
+  }) {
+    const invoice = await db.query.invoices.findFirst({
+      where: eq(invoices.id, invoiceId),
+      with: { lines: true },
+    });
+    if (!invoice) throw Object.assign(new Error('Not found'), { status: 404 });
+
+    // Resolve accountId from accountCode if provided
+    let accountId: string | null = null;
+    if (data.accountCode) {
+      const account = await db.query.chartOfAccounts.findFirst({
+        where: and(
+          eq(chartOfAccounts.companyId, invoice.companyId),
+          eq(chartOfAccounts.code, data.accountCode),
+        ),
+      });
+      accountId = account?.id ?? null;
+    }
+
+    // Update businessUnit on invoice if provided
+    if (data.businessUnit !== undefined) {
+      await db.update(invoices)
+        .set({ businessUnit: data.businessUnit ?? null, updatedAt: new Date() })
+        .where(eq(invoices.id, invoiceId));
+    }
+
+    if (invoice.lines.length > 0) {
+      await db.update(invoiceLines)
+        .set({
+          costCenterId: data.costCenterId ?? null,
+          ...(accountId !== null ? { accountId } : {}),
+        })
+        .where(eq(invoiceLines.id, (invoice.lines as any[])[0].id));
+    } else {
+      await db.insert(invoiceLines).values({
+        invoiceId,
+        lineNumber: 1,
+        nombreItem: 'Imputación manual',
+        montoItem: Number(invoice.montoNeto),
+        costCenterId: data.costCenterId ?? null,
+        ...(accountId !== null ? { accountId } : {}),
+      });
+    }
+
+    return { success: true };
+  }
+
+  async getCostCenters(companyId: string) {
+    return db.select().from(costCenters).where(eq(costCenters.companyId, companyId));
+  }
+
+  async getAccounts(companyId: string) {
+    return db.select().from(chartOfAccounts).where(eq(chartOfAccounts.companyId, companyId));
   }
 }
 

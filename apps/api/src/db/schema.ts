@@ -78,6 +78,8 @@ export const users = pgTable('users', {
   name: varchar('name', { length: 255 }).notNull(),
   isActive: boolean('is_active').default(true).notNull(),
   supabaseAuthId: text('supabase_auth_id').unique(),
+  avatarUrl: text('avatar_url'),
+  phone: text('phone'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -135,8 +137,8 @@ export const costCenters = pgTable('cost_centers', {
   code: varchar('code', { length: 20 }).notNull(),
   name: varchar('name', { length: 255 }).notNull(),
   parentCode: varchar('parent_code', { length: 20 }),
-  parentId: uuid('parent_id').references(() => costCenters.id),
-  level: integer('level').default(0).notNull(),
+  parentId: uuid('parent_id').references((): any => costCenters.id),
+  level: integer('level').default(0),
   isActive: boolean('is_active').default(true).notNull(),
 }, (table) => ({
   uniqueCompanyCode: uniqueIndex('uq_cost_centers_company_code').on(table.companyId, table.code),
@@ -177,6 +179,15 @@ export const invoices = pgTable('invoices', {
   rawSha256: varchar('raw_sha256', { length: 64 }),
   importBatchId: uuid('import_batch_id'),
   syncedAt: timestamp('synced_at'),
+  // SII extended fields
+  siiId: text('sii_id'),
+  siiEstadoCodigo: text('sii_estado_codigo'),
+  siiAnulado: boolean('sii_anulado').default(false),
+  // PO & payment scheduling
+  poMatchStatus: varchar('po_match_status', { length: 20 }),
+  paymentPriority: integer('payment_priority'),
+  paymentWeekAssignedBy: uuid('payment_week_assigned_by').references(() => users.id),
+  paymentWeekAssignedAt: timestamp('payment_week_assigned_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
@@ -290,6 +301,10 @@ export const paymentBatches = pgTable('payment_batches', {
   approvedBy: uuid('approved_by').references(() => users.id),
   approvedAt: timestamp('approved_at'),
   fileContent: text('file_content'),
+  scheduledDate: date('scheduled_date'),
+  bankReference: text('bank_reference'),
+  currency: varchar('currency', { length: 3 }).default('CLP'),
+  bankCode: varchar('bank_code', { length: 20 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -350,6 +365,10 @@ export const siiSyncLogs = pgTable('sii_sync_logs', {
   invoicesUpdated: integer('invoices_updated').default(0).notNull(),
   errorMessage: text('error_message'),
   rawResponseSample: jsonb('raw_response_sample'),
+  apiResponseRaw: jsonb('api_response_raw'),
+  recordsFetched: integer('records_fetched'),
+  recordsCreated: integer('records_created'),
+  recordsUpdated: integer('records_updated'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
@@ -412,27 +431,28 @@ export const purchaseOrders = pgTable('purchase_orders', {
 // ─── User Cost Center Assignments ──────────────────────────────────────────────
 
 export const userCostCenterAssignments = pgTable('user_cost_center_assignments', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  costCenterId: uuid('cost_center_id').notNull().references(() => costCenters.id, { onDelete: 'cascade' }),
-  canApprove: boolean('can_approve').default(false).notNull(),
-  approvalLimit: numeric('approval_limit', { precision: 15, scale: 2 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-});
+  userId: uuid('user_id').notNull().references(() => users.id),
+  costCenterId: uuid('cost_center_id').notNull().references(() => costCenters.id),
+  companyId: uuid('company_id').notNull().references(() => companies.id),
+  createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+  pk: uniqueIndex('uq_user_cost_center_assignments_pk').on(table.userId, table.costCenterId),
+}));
 
 // ─── Supplier Auto Rules ───────────────────────────────────────────────────────
 
 export const supplierAutoRules = pgTable('supplier_auto_rules', {
   id: uuid('id').primaryKey().defaultRandom(),
   companyId: uuid('company_id').notNull().references(() => companies.id),
-  supplierId: uuid('supplier_id').notNull().references(() => suppliers.id),
-  defaultCostCenterId: uuid('default_cost_center_id').references(() => costCenters.id),
-  defaultAccountCode: text('default_account_code'),
-  defaultCategory: text('default_category'),
-  autoApproveBelow: numeric('auto_approve_below', { precision: 15, scale: 2 }),
-  isActive: boolean('is_active').default(true).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  supplierId: uuid('supplier_id').references(() => suppliers.id),
+  supplierRut: text('supplier_rut'),
+  accountCode: text('account_code'),
+  costCenterId: uuid('cost_center_id').references(() => costCenters.id),
+  businessUnit: text('business_unit'),
+  priority: integer('priority').default(0),
+  active: boolean('active').default(true).notNull(),
+  createdBy: uuid('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 // ─── API Keys ─────────────────────────────────────────────────────────────────
@@ -641,4 +661,17 @@ export const invoiceAssignmentsRelations = relations(invoiceAssignments, ({ one 
   invoice: one(invoices, { fields: [invoiceAssignments.invoiceId], references: [invoices.id] }),
   user: one(users, { fields: [invoiceAssignments.userId], references: [users.id] }),
   assignedByUser: one(users, { fields: [invoiceAssignments.assignedBy], references: [users.id] }),
+}));
+
+export const userCostCenterAssignmentsRelations = relations(userCostCenterAssignments, ({ one }) => ({
+  user: one(users, { fields: [userCostCenterAssignments.userId], references: [users.id] }),
+  costCenter: one(costCenters, { fields: [userCostCenterAssignments.costCenterId], references: [costCenters.id] }),
+  company: one(companies, { fields: [userCostCenterAssignments.companyId], references: [companies.id] }),
+}));
+
+export const supplierAutoRulesRelations = relations(supplierAutoRules, ({ one }) => ({
+  company: one(companies, { fields: [supplierAutoRules.companyId], references: [companies.id] }),
+  supplier: one(suppliers, { fields: [supplierAutoRules.supplierId], references: [suppliers.id] }),
+  costCenter: one(costCenters, { fields: [supplierAutoRules.costCenterId], references: [costCenters.id] }),
+  createdByUser: one(users, { fields: [supplierAutoRules.createdBy], references: [users.id] }),
 }));

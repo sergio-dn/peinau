@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { invoiceController } from './invoice.controller.js';
+import { invoiceService } from './invoice.service.js';
 import { authenticateToken } from '../../middleware/auth.js';
 import { requireRole } from '../../middleware/rbac.js';
 
@@ -8,6 +9,19 @@ const router = Router();
 router.use(authenticateToken);
 
 router.get('/', (req, res, next) => invoiceController.list(req, res).catch(next));
+
+// Meta routes — must be defined before /:id to avoid param collision
+router.get('/meta/cost-centers', (req, res, next) => {
+  invoiceService.getCostCenters(req.user!.companyId)
+    .then((data) => res.json(data))
+    .catch(next);
+});
+router.get('/meta/accounts', (req, res, next) => {
+  invoiceService.getAccounts(req.user!.companyId)
+    .then((data) => res.json(data))
+    .catch(next);
+});
+
 router.get('/:id', (req, res, next) => invoiceController.getById(req, res).catch(next));
 router.get('/:id/history', (req, res, next) => invoiceController.getHistory(req, res).catch(next));
 router.put('/:id/lines/:lineId/accounting', requireRole('contabilidad', 'admin'), (req, res, next) => invoiceController.updateLineAccounting(req, res).catch(next));
@@ -26,5 +40,12 @@ router.delete('/:id/tags/:tagId', (req, res, next) => invoiceController.removeTa
 router.get('/:id/assignments', (req, res, next) => invoiceController.getAssignments(req, res).catch(next));
 router.post('/:id/assignments', (req, res, next) => invoiceController.assignUser(req, res).catch(next));
 router.delete('/:id/assignments/:assignmentId', (req, res, next) => invoiceController.removeAssignment(req, res).catch(next));
+
+// Categorización
+router.put('/:id/categorize', requireRole('contabilidad', 'admin'), (req, res, next) => {
+  invoiceService.categorize(req.params.id, req.body)
+    .then((data) => res.json(data))
+    .catch(next);
+});
 
 export default router;
