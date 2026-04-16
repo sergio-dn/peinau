@@ -1,4 +1,4 @@
-import { useEffect, lazy } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth-store';
@@ -83,7 +83,7 @@ export default function App() {
                 <Route path="/payment-batches" element={<PaymentBatchListPage />} />
                 <Route path="/reports" element={<ReportsPage />} />
                 <Route path="/admin/*" element={<AdminPage />} />
-                <Route path="/payment-priority" element={<PaymentPriorityPage />} />
+                <Route path="/payment-priority" element={<Suspense fallback={<div className="flex items-center justify-center h-64"><svg className="animate-spin h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg></div>}><PaymentPriorityPage /></Suspense>} />
               </Routes>
             </AppLayout>
           </ProtectedRoute>
