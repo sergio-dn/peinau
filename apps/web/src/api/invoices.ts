@@ -7,6 +7,7 @@ export interface InvoiceFilters {
   fechaDesde?: string;
   fechaHasta?: string;
   search?: string;
+  tipoDte?: number | string;
   page?: number;
   limit?: number;
 }
