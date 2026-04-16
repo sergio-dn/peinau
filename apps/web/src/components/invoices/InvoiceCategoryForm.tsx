@@ -97,15 +97,15 @@ export function InvoiceCategoryForm({
       <div className="space-y-1">
         <Label htmlFor={`cc-${invoiceId}`}>Centro de Costo (CECO)</Label>
         <Select
-          value={costCenterId}
-          onValueChange={setCostCenterId}
+          value={costCenterId || '__none__'}
+          onValueChange={(v) => setCostCenterId(v === '__none__' ? '' : v)}
           disabled={!canEdit}
         >
           <SelectTrigger id={`cc-${invoiceId}`}>
             <SelectValue placeholder="Seleccionar CECO..." />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Sin CECO</SelectItem>
+            <SelectItem value="__none__">Sin CECO</SelectItem>
             {costCenters.map((cc) => (
               <SelectItem key={cc.id} value={cc.id}>
                 {cc.code} — {cc.name}
@@ -119,15 +119,15 @@ export function InvoiceCategoryForm({
       <div className="space-y-1">
         <Label htmlFor={`account-${invoiceId}`}>Cuenta Contable</Label>
         <Select
-          value={accountCode}
-          onValueChange={setAccountCode}
+          value={accountCode || '__none__'}
+          onValueChange={(v) => setAccountCode(v === '__none__' ? '' : v)}
           disabled={!canEdit}
         >
           <SelectTrigger id={`account-${invoiceId}`}>
             <SelectValue placeholder="Seleccionar cuenta..." />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Sin cuenta</SelectItem>
+            <SelectItem value="__none__">Sin cuenta</SelectItem>
             {accounts.map((a) => (
               <SelectItem key={a.id} value={a.code}>
                 {a.code} — {a.name}
@@ -141,15 +141,15 @@ export function InvoiceCategoryForm({
       <div className="space-y-1">
         <Label htmlFor={`bu-${invoiceId}`}>Unidad de Negocio</Label>
         <Select
-          value={businessUnit}
-          onValueChange={setBusinessUnit}
+          value={businessUnit || '__none__'}
+          onValueChange={(v) => setBusinessUnit(v === '__none__' ? '' : v)}
           disabled={!canEdit}
         >
           <SelectTrigger id={`bu-${invoiceId}`}>
             <SelectValue placeholder="Seleccionar unidad..." />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Sin unidad</SelectItem>
+            <SelectItem value="__none__">Sin unidad</SelectItem>
             {BUSINESS_UNITS.map((bu) => (
               <SelectItem key={bu} value={bu}>
                 {bu}

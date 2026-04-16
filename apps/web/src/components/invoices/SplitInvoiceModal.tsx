@@ -133,14 +133,14 @@ export function SplitInvoiceModal({ invoice, isOpen, onClose }: SplitInvoiceModa
                   <tr key={line.id} className="border-b last:border-0">
                     <td className="py-2 pr-2">
                       <Select
-                        value={line.costCenterId}
-                        onValueChange={(v) => updateLine(line.id, 'costCenterId', v)}
+                        value={line.costCenterId || '__none__'}
+                        onValueChange={(v) => updateLine(line.id, 'costCenterId', v === '__none__' ? '' : v)}
                       >
                         <SelectTrigger className="h-8 text-xs">
                           <SelectValue placeholder="CECO..." />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Sin CECO</SelectItem>
+                          <SelectItem value="__none__">Sin CECO</SelectItem>
                           {costCenters.map((cc) => (
                             <SelectItem key={cc.id} value={cc.id}>
                               {cc.code} — {cc.name}
@@ -151,14 +151,14 @@ export function SplitInvoiceModal({ invoice, isOpen, onClose }: SplitInvoiceModa
                     </td>
                     <td className="py-2 pr-2">
                       <Select
-                        value={line.accountCode}
-                        onValueChange={(v) => updateLine(line.id, 'accountCode', v)}
+                        value={line.accountCode || '__none__'}
+                        onValueChange={(v) => updateLine(line.id, 'accountCode', v === '__none__' ? '' : v)}
                       >
                         <SelectTrigger className="h-8 text-xs">
                           <SelectValue placeholder="Cuenta..." />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">Sin cuenta</SelectItem>
+                          <SelectItem value="__none__">Sin cuenta</SelectItem>
                           {accounts.map((a) => (
                             <SelectItem key={a.id} value={a.code}>
                               {a.code} — {a.name}
