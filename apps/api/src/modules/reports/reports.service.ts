@@ -217,7 +217,7 @@ export class ReportsService {
         month: m,
         label: LABELS[i],
         count: Number(row?.count ?? 0),
-        monto: Number(row?.monto ?? 0),
+        totalAmount: Number(row?.monto ?? 0),
       };
     });
   }
@@ -241,9 +241,9 @@ export class ReportsService {
 
     return rows.map(r => ({
       rut: r.rut,
-      nombre: r.nombre,
-      count: Number(r.count),
-      total: Number(r.total),
+      razonSocial: r.nombre,
+      invoiceCount: Number(r.count),
+      totalAmount: Number(r.total),
     }));
   }
 
@@ -261,11 +261,30 @@ export class ReportsService {
       .from(invoices)
       .where(and(...conditions));
 
+    const byDteType = await db.select({
+      tipoDte: invoices.tipoDte,
+      count: sql<number>`count(*)`,
+      neto: sql<number>`sum(${invoices.montoNeto})`,
+      iva: sql<number>`sum(${invoices.montoIva})`,
+      total: sql<number>`sum(${invoices.montoTotal})`,
+    })
+      .from(invoices)
+      .where(and(...conditions))
+      .groupBy(invoices.tipoDte)
+      .orderBy(desc(sql`sum(${invoices.montoTotal})`));
+
     return {
-      montoNeto: Number(row?.montoNeto ?? 0),
-      montoIva: Number(row?.montoIva ?? 0),
-      montoTotal: Number(row?.montoTotal ?? 0),
+      totalNeto: Number(row?.montoNeto ?? 0),
+      totalIva: Number(row?.montoIva ?? 0),
+      totalGeneral: Number(row?.montoTotal ?? 0),
       count: Number(row?.count ?? 0),
+      byDteType: byDteType.map(r => ({
+        tipoDte: r.tipoDte,
+        count: Number(r.count),
+        neto: Number(r.neto ?? 0),
+        iva: Number(r.iva ?? 0),
+        total: Number(r.total ?? 0),
+      })),
     };
   }
 }
