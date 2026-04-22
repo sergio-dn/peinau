@@ -249,17 +249,30 @@ function SupplierRankingReport() {
     limit: 15,
   });
 
+  const grandTotal = useMemo(
+    () => (data ?? []).reduce((s: number, r: any) => s + Number(r.totalAmount ?? 0), 0),
+    [data],
+  );
+
+  const chartData = useMemo(
+    () => (data ?? []).slice(0, 10).map((r: any) => ({
+      ...r,
+      label: r.razonSocial?.length > 22 ? r.razonSocial.slice(0, 21) + '…' : r.razonSocial,
+    })),
+    [data],
+  );
+
   return (
     <Card>
       <CardHeader>
         <div className="flex flex-wrap items-end gap-4">
           <CardTitle className="text-lg flex-1">Ranking de Proveedores</CardTitle>
           <div>
-            <label className="text-xs text-muted-foreground">Desde</label>
+            <label className="text-xs text-muted-foreground block mb-1">Desde</label>
             <Input type="date" value={fechaDesde} onChange={(e) => setFechaDesde(e.target.value)} className="w-40" />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground">Hasta</label>
+            <label className="text-xs text-muted-foreground block mb-1">Hasta</label>
             <Input type="date" value={fechaHasta} onChange={(e) => setFechaHasta(e.target.value)} className="w-40" />
           </div>
         </div>
@@ -269,38 +282,84 @@ function SupplierRankingReport() {
           <div className="text-center py-8 text-muted-foreground">Cargando...</div>
         ) : data && data.length > 0 ? (
           <div className="space-y-6">
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={data.slice(0, 10)} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" />
-                <YAxis dataKey="razonSocial" type="category" width={200} tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(value: any) => [formatCLP(value), 'Monto Total']} />
-                <Bar dataKey="totalAmount" fill="#6366f1" radius={[0, 4, 4, 0]} />
+            {/* Chart */}
+            <ResponsiveContainer width="100%" height={320}>
+              <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <XAxis
+                  type="number"
+                  tickFormatter={fmtM}
+                  tick={{ fontSize: 11, fill: '#94a3b8' }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  dataKey="label"
+                  type="category"
+                  width={185}
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  cursor={{ fill: '#f8fafc' }}
+                  formatter={(value: any) => [formatCLP(Number(value)), 'Monto Total']}
+                  labelFormatter={(label) => label}
+                />
+                <Bar dataKey="totalAmount" fill="#6366f1" fillOpacity={0.9} radius={[0, 4, 4, 0]} maxBarSize={22} />
               </BarChart>
             </ResponsiveContainer>
 
+            {/* Tabla con % */}
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2 px-2 font-medium">#</th>
+                  <tr className="border-b text-slate-500">
+                    <th className="text-left py-2 px-2 font-medium w-8">#</th>
                     <th className="text-left py-2 px-2 font-medium">Proveedor</th>
                     <th className="text-left py-2 px-2 font-medium">RUT</th>
                     <th className="text-right py-2 px-2 font-medium">Facturas</th>
                     <th className="text-right py-2 px-2 font-medium">Monto Total</th>
+                    <th className="text-right py-2 px-2 font-medium w-20">% del total</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.map((supplier: any, idx: number) => (
-                    <tr key={supplier.rut} className="border-b hover:bg-muted/50">
-                      <td className="py-2 px-2 text-muted-foreground">{idx + 1}</td>
-                      <td className="py-2 px-2 font-medium">{supplier.razonSocial}</td>
-                      <td className="py-2 px-2 font-mono text-xs">{supplier.rut}</td>
-                      <td className="py-2 px-2 text-right">{supplier.invoiceCount}</td>
-                      <td className="py-2 px-2 text-right font-medium">{formatCLP(Number(supplier.totalAmount))}</td>
-                    </tr>
-                  ))}
+                  {data.map((s: any, idx: number) => {
+                    const pct = grandTotal > 0 ? ((Number(s.totalAmount) / grandTotal) * 100) : 0;
+                    return (
+                      <tr key={`${s.rut}-${idx}`} className="border-b hover:bg-slate-50">
+                        <td className="py-2 px-2 text-slate-400 tabular-nums">{idx + 1}</td>
+                        <td className="py-2 px-2 font-medium">{s.razonSocial}</td>
+                        <td className="py-2 px-2 font-mono text-xs text-slate-500">{s.rut ?? '—'}</td>
+                        <td className="py-2 px-2 text-right tabular-nums">{Number(s.invoiceCount).toLocaleString('es-CL')}</td>
+                        <td className="py-2 px-2 text-right font-medium tabular-nums">{formatCLP(Number(s.totalAmount))}</td>
+                        <td className="py-2 px-2 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <div className="w-16 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                              <div
+                                className="h-1.5 rounded-full bg-indigo-400"
+                                style={{ width: `${Math.min(pct, 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs tabular-nums text-slate-500 w-10 text-right">
+                              {pct.toFixed(1)}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t-2 font-semibold text-slate-700">
+                    <td colSpan={3} className="py-2 px-2">Total ({data.length} proveedores)</td>
+                    <td className="py-2 px-2 text-right tabular-nums">
+                      {data.reduce((s: number, r: any) => s + Number(r.invoiceCount), 0).toLocaleString('es-CL')}
+                    </td>
+                    <td className="py-2 px-2 text-right tabular-nums">{formatCLP(grandTotal)}</td>
+                    <td className="py-2 px-2 text-right text-slate-400 text-xs">100%</td>
+                  </tr>
+                </tfoot>
               </table>
             </div>
           </div>
