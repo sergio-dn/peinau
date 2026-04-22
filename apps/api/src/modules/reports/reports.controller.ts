@@ -36,7 +36,8 @@ export class ReportsController {
   }
 
   async dashboard(req: Request, res: Response) {
-    const stats = await reportsService.getDashboardStats(req.user!.companyId);
+    const { desde, hasta } = req.query as Record<string, string>;
+    const stats = await reportsService.getDashboardStats(req.user!.companyId, desde, hasta);
     res.json(stats);
   }
 

@@ -82,14 +82,14 @@ export class ReportsService {
     return result;
   }
 
-  async getDashboardStats(companyId: string) {
+  async getDashboardStats(companyId: string, desde?: string, hasta?: string) {
     const now = new Date();
 
-    // Mes actual
+    // Mes actual (fallback si no se pasan parámetros)
     const year = now.getFullYear();
     const month = now.getMonth(); // 0-indexed
-    const primerDiaMes = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-    const ultimoDiaMes = new Date(year, month + 1, 0).toISOString().split('T')[0];
+    const primerDiaMes = desde ?? `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const ultimoDiaMes = hasta ?? new Date(year, month + 1, 0).toISOString().split('T')[0];
 
     // Mes anterior
     const prevDate = new Date(year, month - 1, 1);
