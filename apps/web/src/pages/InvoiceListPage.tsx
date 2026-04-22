@@ -167,13 +167,6 @@ export default function InvoiceListPage() {
   const { invoices: filters, setInvoiceFilters, resetInvoiceFilters } = useFilterStore();
   const debouncedSearch = useDebouncedValue(filters.search);
 
-  const activeFilterCount = [
-    filters.search,
-    filters.state,
-    filters.tipoDte,
-    filters.fechaDesde,
-    filters.fechaHasta,
-  ].filter(Boolean).length;
   const navigate = useNavigate();
 
   const { data, isLoading } = useInvoices({
@@ -208,25 +201,48 @@ export default function InvoiceListPage() {
   const pageStart = totalItems === 0 ? 0 : (filters.page - 1) * filters.pageSize + 1;
   const pageEnd = Math.min(filters.page * filters.pageSize, totalItems);
 
+  const activeFilterChips = [
+    filters.search && {
+      label: `"${filters.search}"`,
+      clear: () => setInvoiceFilters({ search: '', page: 1 }),
+    },
+    filters.state && {
+      label: STATES.find((s) => s.value === filters.state)?.label ?? filters.state,
+      clear: () => setInvoiceFilters({ state: '', page: 1 }),
+    },
+    filters.tipoDte && {
+      label: DTE_OPTIONS.find((d) => d.value === filters.tipoDte)?.label ?? filters.tipoDte,
+      clear: () => setInvoiceFilters({ tipoDte: '', page: 1 }),
+    },
+    filters.fechaDesde && {
+      label: `Desde ${filters.fechaDesde}`,
+      clear: () => setInvoiceFilters({ fechaDesde: '', page: 1 }),
+    },
+    filters.fechaHasta && {
+      label: `Hasta ${filters.fechaHasta}`,
+      clear: () => setInvoiceFilters({ fechaHasta: '', page: 1 }),
+    },
+  ].filter(Boolean) as { label: string; clear: () => void }[];
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-2xl font-bold">Facturas</h1>
-        {activeFilterCount > 0 && (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
-            <span className="w-4 h-4 bg-blue-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
-              {activeFilterCount}
-            </span>
-            filtro{activeFilterCount > 1 ? 's' : ''} activo{activeFilterCount > 1 ? 's' : ''}
+        {activeFilterChips.map((chip) => (
+          <span
+            key={chip.label}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-medium"
+          >
+            {chip.label}
             <button
-              onClick={() => resetInvoiceFilters()}
-              className="ml-1 hover:text-blue-900 transition-colors"
-              aria-label="Limpiar filtros"
+              onClick={chip.clear}
+              className="ml-0.5 hover:text-blue-900 transition-colors leading-none"
+              aria-label={`Quitar filtro ${chip.label}`}
             >
               ×
             </button>
           </span>
-        )}
+        ))}
       </div>
 
       <Card>
