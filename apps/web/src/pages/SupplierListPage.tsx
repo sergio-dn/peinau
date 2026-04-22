@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Search, ChevronLeft, ChevronRight, Building2, Mail, Phone } from 'lucide-react';
 
 export default function SupplierListPage() {
@@ -76,16 +77,17 @@ export default function SupplierListPage() {
                         </td>
                       </tr>
                     ))}
-                    {data?.data?.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="py-8 text-center text-muted-foreground">
-                          No se encontraron proveedores
-                        </td>
-                      </tr>
-                    )}
                   </tbody>
                 </table>
               </div>
+
+              {data?.data?.length === 0 && (
+                <EmptyState
+                  icon={Building2}
+                  title="Sin proveedores registrados"
+                  description="Los proveedores aparecen automáticamente al sincronizar facturas desde el SII."
+                />
+              )}
 
               {data && (
                 <div className="flex items-center justify-between mt-4">

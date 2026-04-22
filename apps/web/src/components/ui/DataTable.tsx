@@ -46,12 +46,14 @@ export function DataTable<TData>({
               <tr key={headerGroup.id} className="border-b bg-slate-50/80">
                 {headerGroup.headers.map((header) => {
                   const canSort = header.column.getCanSort();
+                  const isHiddenOnMobile = (header.column.columnDef.meta as any)?.hiddenOnMobile;
                   return (
                     <th
                       key={header.id}
                       className={cn(
                         'h-11 px-3 py-3 text-left align-middle text-xs font-semibold uppercase tracking-wider text-muted-foreground',
-                        canSort && 'cursor-pointer select-none'
+                        canSort && 'cursor-pointer select-none',
+                        isHiddenOnMobile && 'hidden lg:table-cell'
                       )}
                       style={{ width: header.getSize() !== 150 ? header.getSize() : undefined }}
                       onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
@@ -93,10 +95,11 @@ export function DataTable<TData>({
                       {row.getVisibleCells().map((cell) => {
                         const isCheckboxColumn =
                           cell.column.id === 'select' || cell.column.id === 'checkbox';
+                        const isHiddenOnMobile = (cell.column.columnDef.meta as any)?.hiddenOnMobile;
                         return (
                           <td
                             key={cell.id}
-                            className="py-3 px-3 align-middle"
+                            className={cn('py-3 px-3 align-middle', isHiddenOnMobile && 'hidden lg:table-cell')}
                             onClick={
                               isCheckboxColumn && onRowClick
                                 ? (e) => e.stopPropagation()

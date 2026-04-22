@@ -1,12 +1,16 @@
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import apiClient from '@/api/client';
 import { formatCLP } from '@wildlama/shared';
 import { AlertTriangle, RefreshCw, FileText, Clock, TrendingUp, Inbox } from 'lucide-react';
 import { useAuthStore } from '@/stores/auth-store';
+import { useFilterStore } from '@/stores/filter-store';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth, startOfQuarter, endOfQuarter, startOfYear, endOfYear, subMonths } from 'date-fns';
+import { format as formatDate } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { Link } from 'react-router-dom';
 
@@ -30,6 +34,26 @@ const STATE_LABELS: Record<string, string> = {
   rechazada: 'Rechazada',
 };
 
+type Period = 'mes_actual' | 'mes_anterior' | 'trimestre' | 'año';
+
+const PERIOD_OPTIONS = [
+  { value: 'mes_actual' as Period,   label: 'Este mes' },
+  { value: 'mes_anterior' as Period, label: 'Mes anterior' },
+  { value: 'trimestre' as Period,    label: 'Este trimestre' },
+  { value: 'año' as Period,          label: 'Este año' },
+];
+
+function getPeriodDates(period: Period) {
+  const now = new Date();
+  const fmt = (d: Date) => formatDate(d, 'yyyy-MM-dd');
+  switch (period) {
+    case 'mes_actual':   return { desde: fmt(startOfMonth(now)),               hasta: fmt(endOfMonth(now)) };
+    case 'mes_anterior': return { desde: fmt(startOfMonth(subMonths(now, 1))), hasta: fmt(endOfMonth(subMonths(now, 1))) };
+    case 'trimestre':    return { desde: fmt(startOfQuarter(now)),             hasta: fmt(endOfQuarter(now)) };
+    case 'año':          return { desde: fmt(startOfYear(now)),                hasta: fmt(endOfYear(now)) };
+  }
+}
+
 function SkeletonCard() {
   return (
     <div className="bg-white border rounded-xl p-5 shadow-sm animate-pulse">
@@ -43,6 +67,10 @@ export default function DashboardPage() {
   const queryClient = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.roles?.includes('admin');
+  const { setInvoiceFilters } = useFilterStore();
+
+  const [period, setPeriod] = useState<Period>('mes_actual');
+  const periodDates = getPeriodDates(period);
 
   const { data: syncStatus } = useQuery({
     queryKey: ['sii', 'sync-status'],
@@ -71,9 +99,9 @@ export default function DashboardPage() {
   });
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ['dashboard', 'stats'],
+    queryKey: ['dashboard', 'stats', period],
     queryFn: async () => {
-      const { data } = await apiClient.get('/reports/dashboard');
+      const { data } = await apiClient.get('/reports/dashboard', { params: periodDates });
       return data;
     },
     staleTime: 60_000,
@@ -86,24 +114,37 @@ export default function DashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
-        {isAdmin && (
-          <div className="flex items-center gap-3">
-            {syncStatus?.lastSync && (
-              <span className="text-sm text-muted-foreground">
-                Último sync: {format(new Date(syncStatus.lastSync), "dd MMM yyyy, HH:mm", { locale: es })}
-              </span>
-            )}
-            <Button
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
-              variant="outline"
-              size="sm"
-            >
-              <RefreshCw className={`w-4 h-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-              {syncMutation.isPending ? 'Sincronizando...' : 'Sync SII'}
-            </Button>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <Select value={period} onValueChange={(v) => setPeriod(v as Period)}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PERIOD_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {isAdmin && (
+            <>
+              {syncStatus?.lastSync && (
+                <span className="text-sm text-muted-foreground">
+                  Último sync: {format(new Date(syncStatus.lastSync), "dd MMM yyyy, HH:mm", { locale: es })}
+                </span>
+              )}
+              <Button
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                variant="outline"
+                size="sm"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+                {syncMutation.isPending ? 'Sincronizando...' : 'Sync SII'}
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Alerta facturas sin procesar */}
@@ -129,15 +170,22 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-white border rounded-xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-slate-500">Facturas del mes</p>
-              <FileText className="w-4 h-4 text-blue-400" />
+          <Link
+            to="/invoices"
+            onClick={() => setInvoiceFilters({ state: '', page: 1 })}
+            className="block"
+          >
+            <div className="bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-slate-500">Facturas del mes</p>
+                <FileText className="w-4 h-4 text-blue-400" />
+              </div>
+              <p className="text-3xl font-bold text-slate-900 tabular-nums">
+                {stats?.totalFacturasMes ?? 0}
+              </p>
+              <p className="text-xs text-slate-400 mt-1 group-hover:text-blue-600 transition-colors">Ver →</p>
             </div>
-            <p className="text-3xl font-bold text-slate-900 tabular-nums">
-              {stats?.totalFacturasMes ?? 0}
-            </p>
-          </div>
+          </Link>
 
           <div className="bg-white border rounded-xl p-5 shadow-sm">
             <div className="flex items-center justify-between mb-2">
@@ -149,25 +197,35 @@ export default function DashboardPage() {
             </p>
           </div>
 
-          <div className="bg-white border rounded-xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-slate-500">Sin procesar</p>
-              <Inbox className={`w-4 h-4 ${stats?.facturasRecibidas > 0 ? 'text-amber-400' : 'text-slate-300'}`} />
+          <Link
+            to="/invoices"
+            onClick={() => setInvoiceFilters({ state: 'recibida', page: 1 })}
+            className="block"
+          >
+            <div className="bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-slate-500">Sin procesar</p>
+                <Inbox className={`w-4 h-4 ${stats?.facturasRecibidas > 0 ? 'text-amber-400' : 'text-slate-300'}`} />
+              </div>
+              <p className={`text-3xl font-bold tabular-nums ${stats?.facturasRecibidas > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
+                {stats?.facturasRecibidas ?? 0}
+              </p>
+              <p className="text-xs text-slate-400 mt-1 group-hover:text-blue-600 transition-colors">Ver →</p>
             </div>
-            <p className={`text-3xl font-bold tabular-nums ${stats?.facturasRecibidas > 0 ? 'text-amber-600' : 'text-slate-900'}`}>
-              {stats?.facturasRecibidas ?? 0}
-            </p>
-          </div>
+          </Link>
 
-          <div className="bg-white border rounded-xl p-5 shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-sm text-slate-500">Pend. aprobación</p>
-              <Clock className={`w-4 h-4 ${stats?.facturasPendientesAprobacion > 0 ? 'text-blue-400' : 'text-slate-300'}`} />
+          <Link to="/approvals" className="block">
+            <div className="bg-white border rounded-xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer group">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-slate-500">Pend. aprobación</p>
+                <Clock className={`w-4 h-4 ${stats?.facturasPendientesAprobacion > 0 ? 'text-blue-400' : 'text-slate-300'}`} />
+              </div>
+              <p className={`text-3xl font-bold tabular-nums ${stats?.facturasPendientesAprobacion > 0 ? 'text-blue-600' : 'text-slate-900'}`}>
+                {stats?.facturasPendientesAprobacion ?? 0}
+              </p>
+              <p className="text-xs text-slate-400 mt-1 group-hover:text-blue-600 transition-colors">Ver →</p>
             </div>
-            <p className={`text-3xl font-bold tabular-nums ${stats?.facturasPendientesAprobacion > 0 ? 'text-blue-600' : 'text-slate-900'}`}>
-              {stats?.facturasPendientesAprobacion ?? 0}
-            </p>
-          </div>
+          </Link>
         </div>
       )}
 

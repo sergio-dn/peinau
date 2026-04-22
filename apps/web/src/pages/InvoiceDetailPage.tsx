@@ -21,6 +21,8 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { formatCLP } from '@wildlama/shared';
 import { useAuthStore } from '@/stores/auth-store';
 import { UserPlus, Scissors, AlertTriangle } from 'lucide-react';
+import { formatDateShort } from '@/lib/format-date';
+import { InvoiceStateFlow } from '@/components/invoices/InvoiceStateFlow';
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -59,6 +61,11 @@ export default function InvoiceDetailPage() {
       {/* Header */}
       <InvoiceHeader invoice={invoice} onBack={() => navigate('/invoices')} />
 
+      {/* State flow stepper */}
+      <div className="bg-white border rounded-xl px-6 py-4">
+        <InvoiceStateFlow currentState={invoice.state} />
+      </div>
+
       {/* Main content: 2/3 + 1/3 grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left: Tabs with main content */}
@@ -91,11 +98,11 @@ export default function InvoiceDetailPage() {
                   <div className="grid grid-cols-2 gap-4 mb-6">
                     <div>
                       <p className="text-sm text-muted-foreground">Fecha Emision</p>
-                      <p className="font-medium">{invoice.fechaEmision}</p>
+                      <p className="font-medium">{formatDateShort(invoice.fechaEmision)}</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Fecha Recepcion SII</p>
-                      <p className="font-medium">{invoice.fechaRecepcionSii || '-'}</p>
+                      <p className="font-medium">{formatDateShort(invoice.fechaRecepcionSii)}</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Monto Neto</p>

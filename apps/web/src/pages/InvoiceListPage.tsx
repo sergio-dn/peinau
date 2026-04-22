@@ -56,7 +56,7 @@ const STATES = [
   { value: 'pendiente', label: 'Pendiente' },
   { value: 'aprobada', label: 'Aprobada' },
   { value: 'contabilizada', label: 'Contabilizada' },
-  { value: 'en_nomina', label: 'En Nomina' },
+  { value: 'en_nomina', label: 'En Nómina' },
   { value: 'pagada', label: 'Pagada' },
   { value: 'rechazada', label: 'Rechazada' },
 ];
@@ -96,6 +96,7 @@ const columns = [
   }),
   columnHelper.accessor('tipoDte', {
     header: 'Tipo',
+    meta: { hiddenOnMobile: true },
     cell: (info) => (
       <span className="text-xs">{formatTipoDte(info.getValue())}</span>
     ),
@@ -118,12 +119,14 @@ const columns = [
   }),
   columnHelper.accessor('rutEmisor', {
     header: 'RUT',
+    meta: { hiddenOnMobile: true },
     cell: (info) => (
       <span className="font-mono text-xs">{info.getValue()}</span>
     ),
   }),
   columnHelper.accessor('montoNeto', {
     header: 'Neto',
+    meta: { hiddenOnMobile: true },
     cell: (info) => (
       <span className="text-right">{formatCLP(Number(info.getValue()))}</span>
     ),
@@ -163,6 +166,14 @@ const columns = [
 export default function InvoiceListPage() {
   const { invoices: filters, setInvoiceFilters, resetInvoiceFilters } = useFilterStore();
   const debouncedSearch = useDebouncedValue(filters.search);
+
+  const activeFilterCount = [
+    filters.search,
+    filters.state,
+    filters.tipoDte,
+    filters.fechaDesde,
+    filters.fechaHasta,
+  ].filter(Boolean).length;
   const navigate = useNavigate();
 
   const { data, isLoading } = useInvoices({
@@ -199,7 +210,24 @@ export default function InvoiceListPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Facturas</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-bold">Facturas</h1>
+        {activeFilterCount > 0 && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+            <span className="w-4 h-4 bg-blue-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
+              {activeFilterCount}
+            </span>
+            filtro{activeFilterCount > 1 ? 's' : ''} activo{activeFilterCount > 1 ? 's' : ''}
+            <button
+              onClick={() => resetInvoiceFilters()}
+              className="ml-1 hover:text-blue-900 transition-colors"
+              aria-label="Limpiar filtros"
+            >
+              ×
+            </button>
+          </span>
+        )}
+      </div>
 
       <Card>
         <CardHeader>

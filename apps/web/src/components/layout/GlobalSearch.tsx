@@ -48,13 +48,13 @@ export function GlobalSearch() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
 
-  // Global ⌘K shortcut
+  // Global ⌘K / Ctrl+K shortcut
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        inputRef.current?.focus();
         setIsOpen(true);
+        setTimeout(() => inputRef.current?.focus(), 50);
       }
       if (e.key === 'Escape') {
         setIsOpen(false);
@@ -153,7 +153,7 @@ export function GlobalSearch() {
               e.currentTarget.blur();
             }
           }}
-          placeholder="Buscar proveedor, folio..."
+          placeholder="Buscar factura, proveedor… ⌘K"
           className="w-full pl-9 pr-16 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg placeholder:text-slate-400 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-colors"
         />
         {/* ⌘K badge */}
