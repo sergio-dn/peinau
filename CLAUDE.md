@@ -13,6 +13,18 @@
 - **Dates**: date-fns con locale `es`
 - **Toasts**: sonner
 
+## Reglas críticas de desarrollo
+
+### Imports — verificar todos los usos antes de eliminar
+Antes de quitar un import, hacer grep del símbolo en el archivo completo. En archivos con múltiples componentes (como ReportsPage.tsx), un componente puede usar un import que otro modificó.
+
+```bash
+# Verificar antes de eliminar 'BarChart':
+grep -n 'BarChart' src/pages/ReportsPage.tsx
+```
+
+---
+
 ## Reglas críticas de entorno
 
 ### Variables de entorno — Vite (frontend)
